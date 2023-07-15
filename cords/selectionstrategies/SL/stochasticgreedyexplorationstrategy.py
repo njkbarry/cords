@@ -31,7 +31,12 @@ class StochasticGreedyExplorationStrategy(object):
         Constructor method
         """
         self.trainloader = trainloader
-        self.N_trn = len(trainloader.sampler.data_source)
+        # Allow for distributed dataloaders
+        try:
+            self.N_trn = len(trainloader.sampler.data_source)
+        except:
+            print("Distributed dataloader")
+            self.N_trn = len(trainloader.dataset)
         self.indices = None
         self.gammas = None
         stochasticsubsets = pickle2dict(stochastic_subsets_file, 'stochastic_subsets')

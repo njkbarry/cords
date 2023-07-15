@@ -19,7 +19,12 @@ class RandomStrategy(object):
         """
 
         self.trainloader = trainloader
-        self.N_trn = len(trainloader.sampler.data_source)
+        # Allow for distributed dataloaders
+        try:
+            self.N_trn = len(trainloader.sampler.data_source)
+        except:
+            print("Distributed dataloader")
+            self.N_trn = len(trainloader.dataset)
         self.online = online
         self.indices = None
         self.gammas = None

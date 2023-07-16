@@ -334,7 +334,7 @@ def compute_global_ordering(
             index = np.argmax(counts)
             tmp.append(index)
         train_labels = tmp
-    elif partition_mode == 'pascal_imgage_label':
+    elif partition_mode == 'pascal_image_label':
         # Get the image-wise label:
         #   - When there are multiple for an image return the most frequent
         #   - All train_labels then are on the same order of magnitude.
@@ -584,15 +584,14 @@ def compute_global_ordering(
 
 
 def compute_stochastic_greedy_subsets(
-    embeddings, submod_function, train_labels, kw, metric, fraction, n_subsets=300
+    embeddings, submod_function, train_labels, kw, metric, fraction, n_subsets=300, partition_mode='native'
 ):
     """
     Return greedy ordering and gains with different submodular functions as the global order.
     """
 
+    # TODO: Create enum
     # Partition methods for Semantic segmentation datasets
-    partition_mode = 'pixel_mode'
-
     if partition_mode == 'no_partition':
         print("DEV EXPERIMENT: NO PARTITIONING!")
         train_labels = [0] * len(train_labels)
@@ -606,7 +605,7 @@ def compute_stochastic_greedy_subsets(
             index = np.argmax(counts)
             tmp.append(index)
         train_labels = tmp
-    elif partition_mode == 'pascal_imgage_label':
+    elif partition_mode == 'pascal_image_label':
         # Get the image-wise label:
         #   - When there are multiple for an image return the most frequent
         #   - All train_labels then are on the same order of magnitude.
@@ -1203,6 +1202,7 @@ def generate_image_global_order(
     data_dir="../data",
     device="cpu",
     config=None,
+    partition_mode='native'
 ):
     # Load Dataset
     train_dataset = load_dataset(dataset, data_dir, seed, config=config)
@@ -1311,6 +1311,7 @@ def generate_image_global_order(
             knn=knn,
             train_labels=train_labels,
             metric=metric,
+            partition=partition_mode
         )
         dict2pickle(
             os.path.join(

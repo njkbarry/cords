@@ -312,7 +312,7 @@ def compute_dino_cls_image_embeddings(images, device, return_tensor=False):
 
 
 def compute_global_ordering(
-    embeddings, submod_function, train_labels, kw, r2_coefficient, knn, metric
+    embeddings, submod_function, train_labels, kw, r2_coefficient, knn, metric, partition_mode, train_dataset
 ):
     """
     Return greedy ordering and gains with different submodular functions as the global order.
@@ -584,8 +584,8 @@ def compute_global_ordering(
 
 
 def compute_stochastic_greedy_subsets(
-    embeddings, submod_function, train_labels, kw, metric, fraction, n_subsets=300, partition_mode='native'
-):
+    embeddings, submod_function, train_labels, kw, metric, fraction, n_subsets=300, partition_mode='native', train_dataset=None
+):    # Drunk hack
     """
     Return greedy ordering and gains with different submodular functions as the global order.
     """
@@ -617,7 +617,8 @@ def compute_stochastic_greedy_subsets(
 
 
     budget = int(fraction * embeddings.shape[0])
-    if submod_function not in ["supfl", "gc_pc", "logdet_pc", "disp_min", "disp_sum"]:
+    # if submod_function not in ["supfl", "gc_pc", "logdet_pc", "disp_min", "disp_sum"]:
+    if submod_function not in ["supfl", "gc_pc", "logdet_pc"]:    # FIXME: Test code
         data_dist = get_cdist(embeddings)
         if metric == "rbf_kernel":
             data_sijs = get_rbf_kernel(data_dist, kw)
@@ -1311,7 +1312,8 @@ def generate_image_global_order(
             knn=knn,
             train_labels=train_labels,
             metric=metric,
-            partition=partition_mode
+            partition_mode=partition_mode,
+            train_dataset=train_dataset
         )
         dict2pickle(
             os.path.join(
@@ -1664,6 +1666,7 @@ def generate_image_stochastic_subsets(
     data_dir="../data",
     device="cpu",
     config=None,
+    partition_mode="native"
 ):
     # Load Dataset
     train_dataset = load_dataset(dataset, data_dir, seed, config=config)
@@ -1743,6 +1746,8 @@ def generate_image_stochastic_subsets(
             metric,
             fraction,
             n_subsets=n_subsets,
+            partition_mode=partition_mode,
+            train_dataset=train_dataset    # FIXME: Drunk hack
         )
         dict2pickle(
             os.path.join(

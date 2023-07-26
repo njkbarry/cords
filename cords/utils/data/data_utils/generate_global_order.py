@@ -1304,9 +1304,12 @@ def generate_image_global_order(
             raise NotImplementedError
         elif model == "sam":
             raise NotImplementedError
-
-        else:
+        elif model == 'segformer':
+            train_embeddings = compute_segformer_image_embeddings(train_images, device)
+        elif model == 'clip':
             train_embeddings = compute_image_embeddings(model, train_images, device)
+        else:
+            raise NotImplementedError
         store_embeddings(
             os.path.join(
                 os.path.abspath(data_dir),

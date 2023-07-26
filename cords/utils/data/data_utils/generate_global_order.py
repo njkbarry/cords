@@ -3,7 +3,7 @@ import torchvision
 from sentence_transformers import SentenceTransformer, util
 from matplotlib import pyplot as plt
 from ..datasets.__utils import TinyImageNet
-from transformers import ViTFeatureExtractor, ViTModel
+from transformers import ViTFeatureExtractor, ViTModel, SegformerFeatureExtractor, SegformerModel
 from scipy.spatial.distance import cdist
 from sklearn.metrics.pairwise import euclidean_distances
 from numba import jit, config
@@ -20,6 +20,11 @@ import time
 from PIL import Image
 
 from tqdm import tqdm
+
+# Oracle loading
+import lib.models
+import lib.datasets
+import lib.config
 
 
 LABEL_MAPPINGS = {
@@ -162,6 +167,62 @@ def compute_text_embeddings(model_name, sentences, device, return_tensor=False):
         embeddings = model.encode(sentences, device=device, convert_to_numpy=True)
     return embeddings
 
+def compute_oracle_image_embeddings(images, device, return_tensor=False):
+    
+    # build model
+    model = eval("models." + config.MODEL.NAME + ".get_seg_model")(config)
+
+    checkpoint = torch.load(model_state_file, map_location={"cuda:0": "cpu"})
+
+    # Load oracle weights
+    model_state_file = os.path.join(final_output_dir, "checkpoint.pth.tar")
+    if os.path.isfile(model_state_file):
+        model.module.model.load_state_dict(
+            {
+                k.replace("model.", ""): v
+                for k, v in checkpoint["state_dict"].items()
+                if k.startswith("model.")
+            }
+        )
+    else:
+        raise ValueError
+    
+    # FIXME: How to turn this model into an encoder
+
+    pass
+
+def compute_segformer_image_embeddings(images, device, return_tensor=False):
+    # TODO: Ensure this does what you think it does
+    feature_extractor = SegformerFeatureExtractor.from_pretrained("nvidia/mit-b0")
+    model = SegformerModel.from_pretrained("nvidia/mit-b0")
+    model = model.to(device)
+    # inputs = feature_extractor(images, return_tensors="pt")
+    sampler = BatchSampler(SequentialSampler(range(len(images))), 20, drop_last=False)
+
+    inputs = []
+    for indices in sampler:
+        if images[0].mode == "L":
+            images_batch = [images[x].convert("RGB") for x in indices]
+        else:
+            images_batch = [images[x] for x in indices]
+        inputs.append(feature_extractor(images_batch, return_tensors="pt"))
+
+    img_features = []
+    for batch_inputs in inputs:
+        tmp_feat_dict = {}
+        for key in batch_inputs.keys():
+            tmp_feat_dict[key] = batch_inputs[key].to(device=device)
+        with torch.no_grad():
+            batch_outputs = model(**tmp_feat_dict)
+        batch_img_features = batch_outputs.last_hidden_state.mean(dim=1).cpu()
+        img_features.append(batch_img_features)
+        del tmp_feat_dict
+
+    img_features = torch.cat(img_features, dim=0)
+    if return_tensor == False:
+        return img_features.numpy()
+    else:
+        return img_features
 
 def compute_image_embeddings(model_name, images, device, return_tensor=False):
     """
@@ -1238,6 +1299,12 @@ def generate_image_global_order(
             train_embeddings = compute_dino_image_embeddings(train_images, device)
         elif model == "dino_cls":
             train_embeddings = compute_dino_cls_image_embeddings(train_images, device)
+        elif model == "oracle":
+            train_embeddings = compute_oracle_image_embeddings(train_images, device)
+            raise NotImplementedError
+        elif model == "sam":
+            raise NotImplementedError
+
         else:
             train_embeddings = compute_image_embeddings(model, train_images, device)
         store_embeddings(

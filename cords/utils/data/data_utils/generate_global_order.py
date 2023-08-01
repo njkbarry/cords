@@ -5,7 +5,12 @@ from matplotlib import pyplot as plt
 
 from lib.models.seg_hrnet_ocr import get_seg_model
 from ..datasets.__utils import TinyImageNet
-from transformers import ViTFeatureExtractor, ViTModel, SegformerFeatureExtractor, SegformerModel
+from transformers import (
+    ViTFeatureExtractor,
+    ViTModel,
+    SegformerFeatureExtractor,
+    SegformerModel,
+)
 from scipy.spatial.distance import cdist
 from sklearn.metrics.pairwise import euclidean_distances
 from numba import jit, config
@@ -171,8 +176,10 @@ def compute_text_embeddings(model_name, sentences, device, return_tensor=False):
         embeddings = model.encode(sentences, device=device, convert_to_numpy=True)
     return embeddings
 
-def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='oracle_spat'):
-    
+
+def compute_oracle_image_embeddings(
+    images, device, return_tensor=False, mode="oracle_spat"
+):
     def parse_model_args():
         parser = argparse.ArgumentParser(description="Train segmentation network")
 
@@ -192,7 +199,7 @@ def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='o
         update_config(config, args)
 
         return args
-    
+
     # generate config
     parse_model_args()
 
@@ -204,7 +211,7 @@ def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='o
 
     # Load oracle weights
     model_state_file = os.path.join(final_output_dir, "checkpoint.pth.tar")
-    
+
     checkpoint = torch.load(model_state_file, map_location={"cuda:0": "cpu"})
 
     if os.path.isfile(model_state_file):
@@ -217,12 +224,12 @@ def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='o
         )
     else:
         raise ValueError
-    
+
     model.eval()
     model.to(device=device)
 
     sampler = BatchSampler(SequentialSampler(range(len(images))), 4, drop_last=False)
-    
+
     img_features = []
     for indices in sampler:
         if images[0].mode == "L":
@@ -230,21 +237,31 @@ def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='o
         else:
             images_batch = [images[x] for x in indices]
 
-        images_batch = [torch.from_numpy(np.array(img)).permute(2,0,1).unsqueeze(0).to(device=device) for img in images_batch]
+        images_batch = [
+            torch.from_numpy(np.array(img))
+            .permute(2, 0, 1)
+            .unsqueeze(0)
+            .to(device=device)
+            for img in images_batch
+        ]
 
-        images_batch = torch.cat(images_batch, dim=0)        
+        images_batch = torch.cat(images_batch, dim=0)
         images_batch = images_batch.float()
 
         with torch.no_grad():
-            if mode == 'oracle_spat':
-                img_features.append(model.spatial_embed_input(images_batch).mean(dim=1).cpu())
-            elif mode == 'oracle_context':
-                img_features.append(model.spatial_embed_input(images_batch).mean(dim=1).cpu())
+            if mode == "oracle_spat":
+                img_features.append(
+                    model.spatial_embed_input(images_batch).mean(dim=1).cpu()
+                )
+            elif mode == "oracle_context":
+                img_features.append(
+                    model.spatial_embed_input(images_batch).mean(dim=1).cpu()
+                )
             else:
                 raise NotImplementedError
-            
+
         del images_batch
-    
+
     img_features = torch.cat(img_features, dim=0)
 
     if return_tensor == False:
@@ -255,7 +272,9 @@ def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='o
 
 def compute_segformer_image_embeddings(images, device, return_tensor=False):
     # TODO: Ensure this does what you think it does
-    feature_extractor = SegformerFeatureExtractor.from_pretrained("nvidia/segformer-b0-finetuned-ade-512-512")
+    feature_extractor = SegformerFeatureExtractor.from_pretrained(
+        "nvidia/segformer-b0-finetuned-ade-512-512"
+    )
     model = SegformerModel.from_pretrained("nvidia/segformer-b0-finetuned-ade-512-512")
     model = model.to(device)
     # inputs = feature_extractor(images, return_tensors="pt")
@@ -285,6 +304,7 @@ def compute_segformer_image_embeddings(images, device, return_tensor=False):
         return img_features.numpy()
     else:
         return img_features
+
 
 def compute_image_embeddings(model_name, images, device, return_tensor=False):
     """
@@ -322,7 +342,9 @@ def compute_vit_image_embeddings(images, device, return_tensor=False):
             tmp_feat_dict[key] = batch_inputs[key].to(device=device)
         with torch.no_grad():
             batch_outputs = model(**tmp_feat_dict)
-        batch_img_features = batch_outputs.last_hidden_state.mean(dim=1).cpu()    # Averages over channels
+        batch_img_features = batch_outputs.last_hidden_state.mean(
+            dim=1
+        ).cpu()  # Averages over channels
         img_features.append(batch_img_features)
         del tmp_feat_dict
 
@@ -435,19 +457,27 @@ def compute_dino_cls_image_embeddings(images, device, return_tensor=False):
 
 
 def compute_global_ordering(
-    embeddings, submod_function, train_labels, kw, r2_coefficient, knn, metric, partition_mode, train_dataset
+    embeddings,
+    submod_function,
+    train_labels,
+    kw,
+    r2_coefficient,
+    knn,
+    metric,
+    partition_mode,
+    train_dataset,
 ):
     """
     Return greedy ordering and gains with different submodular functions as the global order.
     """
 
     # Partition methods for Semantic segmentation datasets
-    partition_mode = 'pixel_mode'
+    partition_mode = "pixel_mode"
 
-    if partition_mode == 'no_partition':
+    if partition_mode == "no_partition":
         print("DEV EXPERIMENT: NO PARTITIONING!")
         train_labels = [0] * len(train_labels)
-    elif partition_mode == 'pixel_mode':
+    elif partition_mode == "pixel_mode":
         # Lazily approximate image-wise label based on most frequent segmentation mask vlaue.
         # Reasonable approximation in ImageNet style images consistent with pascal_ctx
         print("DEV EXPERIMENT: IMAGE-WISE PARTITIONING!")
@@ -457,19 +487,18 @@ def compute_global_ordering(
             index = np.argmax(counts)
             tmp.append(index)
         train_labels = tmp
-    elif partition_mode == 'pascal_image_label':
+    elif partition_mode == "pascal_image_label":
         # Get the image-wise label:
         #   - When there are multiple for an image return the most frequent
         #   - All train_labels then are on the same order of magnitude.
-        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
-    elif partition_mode == 'native':
+        train_labels = [
+            train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3])
+            for i in range(len(train_dataset))
+        ]
+    elif partition_mode == "native":
         pass
     else:
         raise NotImplementedError()
-
-
-
-
 
     if submod_function not in [
         "supfl",
@@ -478,10 +507,11 @@ def compute_global_ordering(
         "disp_min_pc",
         "disp_sum_pc",
     ]:
-        
         # TODO: Fix in more sensible place (segformer train embeddings generation)
         if len(embeddings.shape) == 3:
-            embeddings = embeddings.reshape([embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]])
+            embeddings = embeddings.reshape(
+                [embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]]
+            )
 
         data_dist = get_cdist(embeddings)
         if metric == "rbf_kernel":
@@ -702,7 +732,6 @@ def compute_global_ordering(
     cluster_idxs = {}
     greedy_idxs = [x[0] for x in greedyList]
 
-    
     for i in greedy_idxs:
         if train_labels[i] in cluster_idxs.keys():
             cluster_idxs[train_labels[i]].append(i)
@@ -712,18 +741,26 @@ def compute_global_ordering(
 
 
 def compute_stochastic_greedy_subsets(
-    embeddings, submod_function, train_labels, kw, metric, fraction, n_subsets=300, partition_mode='native', train_dataset=None
-):    # Drunk hack
+    embeddings,
+    submod_function,
+    train_labels,
+    kw,
+    metric,
+    fraction,
+    n_subsets=300,
+    partition_mode="native",
+    train_dataset=None,
+):  # Drunk hack
     """
     Return greedy ordering and gains with different submodular functions as the global order.
     """
 
     # TODO: Create enum
     # Partition methods for Semantic segmentation datasets
-    if partition_mode == 'no_partition':
+    if partition_mode == "no_partition":
         print("DEV EXPERIMENT: NO PARTITIONING!")
         train_labels = [0] * len(train_labels)
-    elif partition_mode == 'pixel_mode':
+    elif partition_mode == "pixel_mode":
         # Lazily approximate image-wise label based on most frequent segmentation mask vlaue.
         # Reasonable approximation in ImageNet style images consistent with pascal_ctx
         print("DEV EXPERIMENT: IMAGE-WISE PARTITIONING!")
@@ -733,24 +770,27 @@ def compute_stochastic_greedy_subsets(
             index = np.argmax(counts)
             tmp.append(index)
         train_labels = tmp
-    elif partition_mode == 'pascal_image_label':
+    elif partition_mode == "pascal_image_label":
         # Get the image-wise label:
         #   - When there are multiple for an image return the most frequent
         #   - All train_labels then are on the same order of magnitude.
-        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
-    elif partition_mode == 'native':
+        train_labels = [
+            train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3])
+            for i in range(len(train_dataset))
+        ]
+    elif partition_mode == "native":
         pass
     else:
         raise NotImplementedError()
 
-
     budget = int(fraction * embeddings.shape[0])
     # if submod_function not in ["supfl", "gc_pc", "logdet_pc", "disp_min", "disp_sum"]:
-    if submod_function not in ["supfl", "gc_pc", "logdet_pc"]:    # FIXME: Test code
-        
+    if submod_function not in ["supfl", "gc_pc", "logdet_pc"]:  # FIXME: Test code
         # TODO: Fix in more sensible place (segformer train embeddings generation)
         if len(embeddings.shape) == 3:
-            embeddings = embeddings.reshape([embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]])
+            embeddings = embeddings.reshape(
+                [embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]]
+            )
 
         data_dist = get_cdist(embeddings)
 
@@ -1337,7 +1377,7 @@ def generate_image_global_order(
     data_dir="../data",
     device="cpu",
     config=None,
-    partition_mode='native'
+    partition_mode="native",
 ):
     # Load Dataset
     train_dataset = load_dataset(dataset, data_dir, seed, config=config)
@@ -1377,9 +1417,9 @@ def generate_image_global_order(
             raise NotImplementedError
         elif model == "sam":
             raise NotImplementedError
-        elif model == 'segformer':
+        elif model == "segformer":
             train_embeddings = compute_segformer_image_embeddings(train_images, device)
-        elif model == 'clip':
+        elif model == "clip":
             train_embeddings = compute_image_embeddings(model, train_images, device)
         else:
             raise NotImplementedError
@@ -1456,7 +1496,7 @@ def generate_image_global_order(
             train_labels=train_labels,
             metric=metric,
             partition_mode=partition_mode,
-            train_dataset=train_dataset
+            train_dataset=train_dataset,
         )
         dict2pickle(
             os.path.join(
@@ -1809,7 +1849,7 @@ def generate_image_stochastic_subsets(
     data_dir="../data",
     device="cpu",
     config=None,
-    partition_mode="native"
+    partition_mode="native",
 ):
     # Load Dataset
     train_dataset = load_dataset(dataset, data_dir, seed, config=config)
@@ -1846,14 +1886,18 @@ def generate_image_stochastic_subsets(
         elif model == "dino_cls":
             train_embeddings = compute_dino_cls_image_embeddings(train_images, device)
         elif model == "oracle_spat":
-            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_spat")
+            train_embeddings = compute_oracle_image_embeddings(
+                train_images, device, mode="oracle_spat"
+            )
         elif model == "oracle_context":
-            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_context")
+            train_embeddings = compute_oracle_image_embeddings(
+                train_images, device, mode="oracle_context"
+            )
         elif model == "sam":
             raise NotImplementedError
-        elif model == 'segformer':
+        elif model == "segformer":
             train_embeddings = compute_segformer_image_embeddings(train_images, device)
-        elif model == 'clip':
+        elif model == "clip":
             train_embeddings = compute_image_embeddings(model, train_images, device)
         else:
             raise NotImplementedError
@@ -1900,7 +1944,7 @@ def generate_image_stochastic_subsets(
             fraction,
             n_subsets=n_subsets,
             partition_mode=partition_mode,
-            train_dataset=train_dataset    # FIXME: Drunk hack
+            train_dataset=train_dataset,  # FIXME: Drunk hack
         )
         dict2pickle(
             os.path.join(

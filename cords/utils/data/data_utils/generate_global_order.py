@@ -2,6 +2,8 @@ import datasets
 import torchvision
 from sentence_transformers import SentenceTransformer, util
 from matplotlib import pyplot as plt
+
+from lib.models.seg_hrnet_ocr import get_seg_model
 from ..datasets.__utils import TinyImageNet
 from transformers import ViTFeatureExtractor, ViTModel, SegformerFeatureExtractor, SegformerModel
 from scipy.spatial.distance import cdist
@@ -24,7 +26,9 @@ from tqdm import tqdm
 # Oracle loading
 import lib.models
 import lib.datasets
-import lib.config
+from lib.config import config, update_config
+from lib.core.criterion import CrossEntropy, OhemCrossEntropy
+import torch.nn as nn
 
 
 LABEL_MAPPINGS = {
@@ -167,17 +171,44 @@ def compute_text_embeddings(model_name, sentences, device, return_tensor=False):
         embeddings = model.encode(sentences, device=device, convert_to_numpy=True)
     return embeddings
 
-def compute_oracle_image_embeddings(images, device, return_tensor=False):
+def compute_oracle_image_embeddings(images, device, return_tensor=False, mode='oracle_spat'):
     
-    # build model
-    model = eval("models." + config.MODEL.NAME + ".get_seg_model")(config)
+    def parse_model_args():
+        parser = argparse.ArgumentParser(description="Train segmentation network")
 
-    checkpoint = torch.load(model_state_file, map_location={"cuda:0": "cpu"})
+        parser.add_argument(
+            "--cfg", help="experiment configure file name", required=True, type=str
+        )
+        parser.add_argument("--seed", type=int, default=304)
+        parser.add_argument("--local_rank", type=int, default=-1)
+        parser.add_argument(
+            "opts",
+            help="Modify config options using the command-line",
+            default=None,
+            nargs=argparse.REMAINDER,
+        )
+
+        args = parser.parse_args()
+        update_config(config, args)
+
+        return args
+    
+    # generate config
+    parse_model_args()
+
+    # FIXME: Model type hard coded
+    model = get_seg_model(config)
+
+    # FIXME: final_output_dir hard coded
+    final_output_dir = "/home/nickbarry/Documents/MsC-DS/Data_Science_Research_Project/Coresets/Repositories/HRNet-Semantic-Segmentation-Coreset/output/proxy_experiment/oracle_model"
 
     # Load oracle weights
     model_state_file = os.path.join(final_output_dir, "checkpoint.pth.tar")
+    
+    checkpoint = torch.load(model_state_file, map_location={"cuda:0": "cpu"})
+
     if os.path.isfile(model_state_file):
-        model.module.model.load_state_dict(
+        model.load_state_dict(
             {
                 k.replace("model.", ""): v
                 for k, v in checkpoint["state_dict"].items()
@@ -187,14 +218,45 @@ def compute_oracle_image_embeddings(images, device, return_tensor=False):
     else:
         raise ValueError
     
-    # FIXME: How to turn this model into an encoder
+    model.eval()
+    model.to(device=device)
 
-    pass
+    sampler = BatchSampler(SequentialSampler(range(len(images))), 4, drop_last=False)
+    
+    img_features = []
+    for indices in sampler:
+        if images[0].mode == "L":
+            images_batch = [images[x].convert("RGB") for x in indices]
+        else:
+            images_batch = [images[x] for x in indices]
+
+        images_batch = [torch.from_numpy(np.array(img)).permute(2,0,1).unsqueeze(0).to(device=device) for img in images_batch]
+
+        images_batch = torch.cat(images_batch, dim=0)        
+        images_batch = images_batch.float()
+
+        with torch.no_grad():
+            if mode == 'oracle_spat':
+                img_features.append(model.spatial_embed_input(images_batch).mean(dim=1).cpu())
+            elif mode == 'oracle_context':
+                img_features.append(model.spatial_embed_input(images_batch).mean(dim=1).cpu())
+            else:
+                raise NotImplementedError
+            
+        del images_batch
+    
+    img_features = torch.cat(img_features, dim=0)
+
+    if return_tensor == False:
+        return img_features.numpy()
+    else:
+        return img_features
+
 
 def compute_segformer_image_embeddings(images, device, return_tensor=False):
     # TODO: Ensure this does what you think it does
-    feature_extractor = SegformerFeatureExtractor.from_pretrained("nvidia/mit-b0")
-    model = SegformerModel.from_pretrained("nvidia/mit-b0")
+    feature_extractor = SegformerFeatureExtractor.from_pretrained("nvidia/segformer-b0-finetuned-ade-512-512")
+    model = SegformerModel.from_pretrained("nvidia/segformer-b0-finetuned-ade-512-512")
     model = model.to(device)
     # inputs = feature_extractor(images, return_tensors="pt")
     sampler = BatchSampler(SequentialSampler(range(len(images))), 20, drop_last=False)
@@ -260,7 +322,7 @@ def compute_vit_image_embeddings(images, device, return_tensor=False):
             tmp_feat_dict[key] = batch_inputs[key].to(device=device)
         with torch.no_grad():
             batch_outputs = model(**tmp_feat_dict)
-        batch_img_features = batch_outputs.last_hidden_state.mean(dim=1).cpu()
+        batch_img_features = batch_outputs.last_hidden_state.mean(dim=1).cpu()    # Averages over channels
         img_features.append(batch_img_features)
         del tmp_feat_dict
 
@@ -416,6 +478,11 @@ def compute_global_ordering(
         "disp_min_pc",
         "disp_sum_pc",
     ]:
+        
+        # TODO: Fix in more sensible place (segformer train embeddings generation)
+        if len(embeddings.shape) == 3:
+            embeddings = embeddings.reshape([embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]])
+
         data_dist = get_cdist(embeddings)
         if metric == "rbf_kernel":
             data_sijs = get_rbf_kernel(data_dist, kw)
@@ -680,7 +747,13 @@ def compute_stochastic_greedy_subsets(
     budget = int(fraction * embeddings.shape[0])
     # if submod_function not in ["supfl", "gc_pc", "logdet_pc", "disp_min", "disp_sum"]:
     if submod_function not in ["supfl", "gc_pc", "logdet_pc"]:    # FIXME: Test code
+        
+        # TODO: Fix in more sensible place (segformer train embeddings generation)
+        if len(embeddings.shape) == 3:
+            embeddings = embeddings.reshape([embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]])
+
         data_dist = get_cdist(embeddings)
+
         if metric == "rbf_kernel":
             data_sijs = get_rbf_kernel(data_dist, kw)
         elif metric == "dot":
@@ -1772,8 +1845,18 @@ def generate_image_stochastic_subsets(
             train_embeddings = compute_dino_image_embeddings(train_images, device)
         elif model == "dino_cls":
             train_embeddings = compute_dino_cls_image_embeddings(train_images, device)
-        else:
+        elif model == "oracle_spat":
+            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_spat")
+        elif model == "oracle_context":
+            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_context")
+        elif model == "sam":
+            raise NotImplementedError
+        elif model == 'segformer':
+            train_embeddings = compute_segformer_image_embeddings(train_images, device)
+        elif model == 'clip':
             train_embeddings = compute_image_embeddings(model, train_images, device)
+        else:
+            raise NotImplementedError
         store_embeddings(
             os.path.join(
                 os.path.abspath(data_dir),

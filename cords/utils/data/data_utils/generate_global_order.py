@@ -255,7 +255,11 @@ def compute_oracle_image_embeddings(
                 )
             elif mode == "oracle_context":
                 img_features.append(
-                    model.spatial_embed_input(images_batch).mean(dim=1).cpu()
+                    model.context_embed_input(images_batch).mean(dim=1).cpu()
+                )
+            elif mode == "oracle_feature_flat":
+                img_features.append(
+                    model.feature_embed_input(images_batch, flat=True).mean(dim=1).cpu()
                 )
             else:
                 raise NotImplementedError
@@ -1892,6 +1896,10 @@ def generate_image_stochastic_subsets(
         elif model == "oracle_context":
             train_embeddings = compute_oracle_image_embeddings(
                 train_images, device, mode="oracle_context"
+            )
+        elif model == "oracle_feature_flat":
+            train_embeddings = compute_oracle_image_embeddings(
+                train_images, device, mode="oracle_feature_flat"
             )
         elif model == "sam":
             raise NotImplementedError

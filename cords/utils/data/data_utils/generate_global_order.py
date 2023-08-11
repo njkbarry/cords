@@ -12,6 +12,8 @@ from transformers import (
     SegformerModel,
 )
 from scipy.spatial.distance import cdist
+from scipy.stats import wasserstein_distance, chi2
+from ot import sliced_wasserstein_distance
 from sklearn.metrics.pairwise import euclidean_distances
 from numba import jit, config
 from torch.utils.data import random_split, BatchSampler, SequentialSampler
@@ -34,6 +36,16 @@ import lib.datasets
 from lib.config import config, update_config
 from lib.core.criterion import CrossEntropy, OhemCrossEntropy
 import torch.nn as nn
+
+
+def multi_wasserstin(mat, sim, i, j):
+    n_projections = 100
+    sim[i][j] = sliced_wasserstein_distance(mat[i], mat[j], n_projections=n_projections)
+
+
+def multi_wasserstin_map(params):
+    i, j = params
+    sim[i][j] = sliced_wasserstein_distance(emb[i], emb[j], n_projections=100)
 
 
 LABEL_MAPPINGS = {
@@ -160,6 +172,102 @@ def get_rbf_kernel(dist_mat, kw=0.1):
 # @jit(nopython=True, parallel=True)
 def get_dot_product(mat):
     sim = np.matmul(mat, np.transpose(mat))
+    return sim
+
+
+def get_wasserstein(mat, n_projections=100):
+    def func_thread(mat, i, j, sim, n_projections):
+        sim[i][j] = sliced_wasserstein_distance(
+            mat[i], mat[j], n_projections=n_projections
+        )
+
+    assert len(mat.shape) == 3, "embeddings are not 2D for wasserstein"
+
+    global n
+    global sim
+    global emb
+
+    n = int(mat.shape[0])
+    sim = np.zeros((n, n))
+    emb = mat
+
+    # Non-optimised
+    # for i in tqdm(
+    #     range(n), total=n, desc="Generating Wasserstein Similarity Kernel", position=0
+    # ):
+    #     for j in tqdm(range(n), position=1, leave=False):
+    #         sim[i][j] = sliced_wasserstein_distance(
+    #             mat[i], mat[j], n_projections=n_projections
+    #         )
+    # sim = sim / np.max(sim)    # normalise
+    # print(0)
+
+    # # Multi - threaded
+    # import threading
+
+    # num = n
+    # div = 4
+
+    # splits = [0] + list(
+    #     np.cumsum([num // div + (1 if x < num % div else 0) for x in range(div)])
+    # )
+    # split_points = zip(splits, splits[1:])
+    # for a, b in split_points:
+    #     thread_list = []
+    #     for i in tqdm(range(a, b), total=n, desc="Initialising threads", position=0):
+    #         for j in tqdm(range(n), position=1, leave=False):
+    #             thread = threading.Thread(
+    #                 target=func_thread, args=(mat, i, j, sim, n_projections)
+    #             )
+    #             thread_list.append(thread)
+    #     for thread in tqdm(
+    #         thread_list, total=len(thread_list), desc="starting threads"
+    #     ):
+    #         thread.start()
+    #     for thread in tqdm(thread_list, total=len(thread_list), desc="joining threads"):
+    #         thread.join()
+    # sim = sim / np.max(sim)  # normalise
+
+    # Multi-processing
+    from multiprocessing import Pool, Process
+    from multiprocessing import freeze_support
+
+    n_processors = 8
+
+    # def run_multiprocessing(func, i, n_processors):
+    #     with Pool(processes=n_processors) as pool:
+    #         return pool.map(func, i)
+
+    # out = run_multiprocessing(multi_wasserstin, mat, n_processors)
+    # print(0)
+
+    # jobs = []
+
+    # for i in tqdm(
+    #     range(n), total=n, desc="Generating Wasserstein Similarity Kernel", position=0
+    # ):
+    #     for j in tqdm(range(n), position=1, leave=False):
+    #         p = Process(target=multi_wasserstin, args=(mat, sim, i, j))
+    #         jobs.append(p)
+    #         p.start()
+    #         p.join()
+    #         p.close()
+
+    i = range(n)
+    j = range(n)
+    import itertools
+
+    paramlist = list(itertools.product(i, j))
+
+    pool = Pool(maxtasksperchild=100)
+    # res = pool.map(multi_wasserstin_map, paramlist)
+    import tqdm
+
+    for _ in tqdm.tqdm(pool.map(multi_wasserstin_map, paramlist), total=len(paramlist)):
+        pass
+
+    sim = sim / np.max(sim)  # normalise
+
     return sim
 
 
@@ -791,35 +899,43 @@ def compute_stochastic_greedy_subsets(
     # if submod_function not in ["supfl", "gc_pc", "logdet_pc", "disp_min", "disp_sum"]:
     if submod_function not in ["supfl", "gc_pc", "logdet_pc"]:  # FIXME: Test code
         # TODO: Fix in more sensible place (segformer train embeddings generation)
-        if len(embeddings.shape) == 3:
-            embeddings = embeddings.reshape(
-                [embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]]
-            )
-
-        data_dist = get_cdist(embeddings)
-
-        if metric == "rbf_kernel":
-            data_sijs = get_rbf_kernel(data_dist, kw)
-        elif metric == "dot":
-            data_sijs = get_dot_product(embeddings)
-            if submod_function in ["disp_min", "disp_sum"]:
-                data_sijs = (data_sijs - np.min(data_sijs)) / (
-                    np.max(data_sijs) - np.min(data_sijs)
+        if metric in ["rbf_kernel", "dot", "cossim"]:  # 1D embedding vector
+            if len(embeddings.shape) == 3:
+                embeddings = embeddings.reshape(
+                    [embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]]
                 )
-            else:
-                if np.min(data_sijs) < 0:
-                    data_sijs = data_sijs - np.min(data_sijs)
-        elif metric == "cossim":
-            normalized_embeddings = embeddings / np.linalg.norm(
-                embeddings, axis=1, keepdims=True
-            )
-            data_sijs = get_dot_product(normalized_embeddings)
-            if submod_function in ["disp_min", "disp_sum"]:
-                data_sijs = (data_sijs - np.min(data_sijs)) / (
-                    np.max(data_sijs) - np.min(data_sijs)
+
+            data_dist = get_cdist(embeddings)
+
+            if metric == "rbf_kernel":
+                data_sijs = get_rbf_kernel(data_dist, kw)
+            elif metric == "dot":
+                data_sijs = get_dot_product(embeddings)
+                if submod_function in ["disp_min", "disp_sum"]:
+                    data_sijs = (data_sijs - np.min(data_sijs)) / (
+                        np.max(data_sijs) - np.min(data_sijs)
+                    )
+                else:
+                    if np.min(data_sijs) < 0:
+                        data_sijs = data_sijs - np.min(data_sijs)
+            elif metric == "cossim":
+                normalized_embeddings = embeddings / np.linalg.norm(
+                    embeddings, axis=1, keepdims=True
                 )
-            else:
-                data_sijs = (data_sijs + 1) / 2
+                data_sijs = get_dot_product(normalized_embeddings)
+                if submod_function in ["disp_min", "disp_sum"]:
+                    data_sijs = (data_sijs - np.min(data_sijs)) / (
+                        np.max(data_sijs) - np.min(data_sijs)
+                    )
+                else:
+                    data_sijs = (data_sijs + 1) / 2
+        elif metric in ["wasserstein", "mmd", "chi"]:
+            if metric == "wasserstein":
+                data_sijs = get_wasserstein(embeddings)
+            elif metric == "md":
+                raise NotImplementedError
+            elif metric == "chi":
+                raise NotImplementedError
         else:
             raise ValueError("Please enter a valid metric")
 

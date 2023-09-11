@@ -61,9 +61,7 @@ def get_cdist_2D(matrix):
 
 def get_sliced_wasserstein_dist(params):
     i, j = params
-    return (i, j), sliced_wasserstein_distance(
-        emb[i] / np.max(emb[i]), emb[j] / np.max(emb[j]), n_projections=100
-    )
+    return (i, j), sliced_wasserstein_distance(emb[i] / np.max(emb[i]), emb[j] / np.max(emb[j]), n_projections=100)
 
 
 def get_gromov_wasserstein_dist(params):
@@ -135,9 +133,7 @@ IMAGE_MAPPINGS = {"cifar10": "images"}
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Compute Global ordering of a dataset using pretrained LMs."
-    )
+    parser = argparse.ArgumentParser(description="Compute Global ordering of a dataset using pretrained LMs.")
     parser.add_argument(
         "--dataset",
         type=str,
@@ -367,23 +363,17 @@ def compute_text_embeddings(model_name, sentences, device, return_tensor=False):
     """
     model = SentenceTransformer(model_name, device=device)
     if return_tensor:
-        embeddings = model.encode(
-            sentences, device=device, convert_to_tensor=True
-        ).cpu()
+        embeddings = model.encode(sentences, device=device, convert_to_tensor=True).cpu()
     else:
         embeddings = model.encode(sentences, device=device, convert_to_numpy=True)
     return embeddings
 
 
-def compute_oracle_image_embeddings(
-    images, device, return_tensor=False, mode="oracle_spat"
-):
+def compute_oracle_image_embeddings(images, device, return_tensor=False, mode="oracle_spat"):
     def parse_model_args():
         parser = argparse.ArgumentParser(description="Train segmentation network")
 
-        parser.add_argument(
-            "--cfg", help="experiment configure file name", required=True, type=str
-        )
+        parser.add_argument("--cfg", help="experiment configure file name", required=True, type=str)
         parser.add_argument("--seed", type=int, default=304)
         parser.add_argument("--local_rank", type=int, default=-1)
         parser.add_argument(
@@ -413,13 +403,7 @@ def compute_oracle_image_embeddings(
     checkpoint = torch.load(model_state_file, map_location={"cuda:0": "cpu"})
 
     if os.path.isfile(model_state_file):
-        model.load_state_dict(
-            {
-                k.replace("model.", ""): v
-                for k, v in checkpoint["state_dict"].items()
-                if k.startswith("model.")
-            }
-        )
+        model.load_state_dict({k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items() if k.startswith("model.")})
     else:
         raise ValueError
 
@@ -435,30 +419,18 @@ def compute_oracle_image_embeddings(
         else:
             images_batch = [images[x] for x in indices]
 
-        images_batch = [
-            torch.from_numpy(np.array(img))
-            .permute(2, 0, 1)
-            .unsqueeze(0)
-            .to(device=device)
-            for img in images_batch
-        ]
+        images_batch = [torch.from_numpy(np.array(img)).permute(2, 0, 1).unsqueeze(0).to(device=device) for img in images_batch]
 
         images_batch = torch.cat(images_batch, dim=0)
         images_batch = images_batch.float()
 
         with torch.no_grad():
             if mode == "oracle_spat":
-                img_features.append(
-                    model.spatial_embed_input(images_batch).mean(dim=1).cpu()
-                )
+                img_features.append(model.spatial_embed_input(images_batch).mean(dim=1).cpu())
             elif mode == "oracle_context":
-                img_features.append(
-                    model.context_embed_input(images_batch).mean(dim=1).cpu()
-                )
+                img_features.append(model.context_embed_input(images_batch).mean(dim=1).cpu())
             elif mode == "oracle_feature_flat":
-                img_features.append(
-                    model.feature_embed_input(images_batch, flat=True).mean(dim=1).cpu()
-                )
+                img_features.append(model.feature_embed_input(images_batch, flat=True).mean(dim=1).cpu())
             else:
                 raise NotImplementedError
 
@@ -474,9 +446,7 @@ def compute_oracle_image_embeddings(
 
 def compute_segformer_image_embeddings(images, device, return_tensor=False):
     # TODO: Ensure this does what you think it does
-    feature_extractor = SegformerFeatureExtractor.from_pretrained(
-        "nvidia/segformer-b0-finetuned-ade-512-512"
-    )
+    feature_extractor = SegformerFeatureExtractor.from_pretrained("nvidia/segformer-b0-finetuned-ade-512-512")
     model = SegformerModel.from_pretrained("nvidia/segformer-b0-finetuned-ade-512-512")
     model = model.to(device)
     # inputs = feature_extractor(images, return_tensors="pt")
@@ -521,9 +491,7 @@ def compute_image_embeddings(model_name, images, device, return_tensor=False):
 
 
 def compute_vit_image_embeddings(images, device, return_tensor=False):
-    feature_extractor = ViTFeatureExtractor.from_pretrained(
-        "google/vit-large-patch16-224-in21k"
-    )
+    feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-large-patch16-224-in21k")
     model = ViTModel.from_pretrained("google/vit-large-patch16-224-in21k")
     model = model.to(device)
     # inputs = feature_extractor(images, return_tensors="pt")
@@ -544,9 +512,7 @@ def compute_vit_image_embeddings(images, device, return_tensor=False):
             tmp_feat_dict[key] = batch_inputs[key].to(device=device)
         with torch.no_grad():
             batch_outputs = model(**tmp_feat_dict)
-        batch_img_features = batch_outputs.last_hidden_state.mean(
-            dim=1
-        ).cpu()  # Averages over channels
+        batch_img_features = batch_outputs.last_hidden_state.mean(dim=1).cpu()  # Averages over channels
         img_features.append(batch_img_features)
         del tmp_feat_dict
 
@@ -558,9 +524,7 @@ def compute_vit_image_embeddings(images, device, return_tensor=False):
 
 
 def compute_vit_cls_image_embeddings(images, device, return_tensor=False):
-    feature_extractor = ViTFeatureExtractor.from_pretrained(
-        "google/vit-large-patch16-224-in21k"
-    )
+    feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-large-patch16-224-in21k")
     model = ViTModel.from_pretrained("google/vit-large-patch16-224-in21k")
     model = model.to(device)
     # inputs = feature_extractor(images, return_tensors="pt")
@@ -693,10 +657,7 @@ def compute_global_ordering(
         # Get the image-wise label:
         #   - When there are multiple for an image return the most frequent
         #   - All train_labels then are on the same order of magnitude.
-        train_labels = [
-            train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3])
-            for i in range(len(train_dataset))
-        ]
+        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
     elif partition_mode == "native":
         pass
     else:
@@ -711,9 +672,7 @@ def compute_global_ordering(
     ]:
         if metric in ["rbf_kernel", "dot", "cossim"]:  # 1D embedding vector
             if len(embeddings.shape) == 3:
-                embeddings = embeddings.reshape(
-                    [embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]]
-                )
+                embeddings = embeddings.reshape([embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]])
 
             data_dist = get_cdist(embeddings)
 
@@ -722,21 +681,15 @@ def compute_global_ordering(
             elif metric == "dot":
                 data_sijs = get_dot_product(embeddings)
                 if submod_function in ["disp_min", "disp_sum"]:
-                    data_sijs = (data_sijs - np.min(data_sijs)) / (
-                        np.max(data_sijs) - np.min(data_sijs)
-                    )
+                    data_sijs = (data_sijs - np.min(data_sijs)) / (np.max(data_sijs) - np.min(data_sijs))
                 else:
                     if np.min(data_sijs) < 0:
                         data_sijs = data_sijs - np.min(data_sijs)
             elif metric == "cossim":
-                normalized_embeddings = embeddings / np.linalg.norm(
-                    embeddings, axis=1, keepdims=True
-                )
+                normalized_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
                 data_sijs = get_dot_product(normalized_embeddings)
                 if submod_function in ["disp_min", "disp_sum"]:
-                    data_sijs = (data_sijs - np.min(data_sijs)) / (
-                        np.max(data_sijs) - np.min(data_sijs)
-                    )
+                    data_sijs = (data_sijs - np.min(data_sijs)) / (np.max(data_sijs) - np.min(data_sijs))
                 else:
                     data_sijs = (data_sijs + 1) / 2
         elif metric in [
@@ -760,9 +713,7 @@ def compute_global_ordering(
             raise ValueError("Please enter a valid metric")
 
         data_knn = np.argsort(data_dist, axis=1)[:, :knn].tolist()
-        data_r2 = np.nonzero(
-            data_dist <= max(1e-5, data_dist.mean() - r2_coefficient * data_dist.std())
-        )
+        data_r2 = np.nonzero(data_dist <= max(1e-5, data_dist.mean() - r2_coefficient * data_dist.std()))
         data_r2 = zip(data_r2[0].tolist(), data_r2[1].tolist())
         data_r2_dict = {}
         for x in data_r2:
@@ -772,14 +723,10 @@ def compute_global_ordering(
                 data_r2_dict[x[0]] = [x[1]]
 
     if submod_function == "fl":
-        obj = submodlib.FacilityLocationFunction(
-            n=embeddings.shape[0], separate_rep=False, mode="dense", sijs=data_sijs
-        )
+        obj = submodlib.FacilityLocationFunction(n=embeddings.shape[0], separate_rep=False, mode="dense", sijs=data_sijs)
 
     elif submod_function == "logdet":
-        obj = submodlib.LogDeterminantFunction(
-            n=embeddings.shape[0], mode="dense", lambdaVal=1, sijs=data_sijs
-        )
+        obj = submodlib.LogDeterminantFunction(n=embeddings.shape[0], mode="dense", lambdaVal=1, sijs=data_sijs)
 
     elif submod_function == "gc":
         obj = submodlib.GraphCutFunction(
@@ -791,14 +738,10 @@ def compute_global_ordering(
         )
 
     elif submod_function == "disp_min":
-        obj = submodlib.DisparityMinFunction(
-            n=embeddings.shape[0], mode="dense", sijs=data_sijs
-        )
+        obj = submodlib.DisparityMinFunction(n=embeddings.shape[0], mode="dense", sijs=data_sijs)
 
     elif submod_function == "disp_sum":
-        obj = submodlib.DisparitySumFunction(
-            n=embeddings.shape[0], mode="dense", sijs=data_sijs
-        )
+        obj = submodlib.DisparitySumFunction(n=embeddings.shape[0], mode="dense", sijs=data_sijs)
 
     if submod_function in ["gc", "fl", "logdet", "disp_min", "disp_sum"]:
         if submod_function == "disp_min":
@@ -817,9 +760,7 @@ def compute_global_ordering(
                 stopIfNegativeGain=False,
                 verbose=False,
             )
-        rem_elem = list(
-            set(range(embeddings.shape[0])).difference(set([x[0] for x in greedyList]))
-        )[0]
+        rem_elem = list(set(range(embeddings.shape[0])).difference(set([x[0] for x in greedyList])))[0]
         rem_gain = greedyList[-1][1]
         greedyList.append((rem_elem, rem_gain))
     else:
@@ -847,21 +788,15 @@ def compute_global_ordering(
             elif metric == "dot":
                 clustered_sijs = get_dot_product(cluster_embeddings)
                 if submod_function in ["disp_min_pc", "disp_sum_pc"]:
-                    clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (
-                        np.max(clustered_sijs) - np.min(clustered_sijs)
-                    )
+                    clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (np.max(clustered_sijs) - np.min(clustered_sijs))
                 else:
                     if np.min(clustered_sijs) < 0:
                         clustered_sijs = clustered_sijs - np.min(clustered_sijs)
             elif metric == "cossim":
-                normalized_embeddings = cluster_embeddings / np.linalg.norm(
-                    cluster_embeddings, axis=1, keepdims=True
-                )
+                normalized_embeddings = cluster_embeddings / np.linalg.norm(cluster_embeddings, axis=1, keepdims=True)
                 clustered_sijs = get_dot_product(normalized_embeddings)
                 if submod_function in ["disp_min_pc", "disp_sum_pc"]:
-                    clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (
-                        np.max(clustered_sijs) - np.min(clustered_sijs)
-                    )
+                    clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (np.max(clustered_sijs) - np.min(clustered_sijs))
                 else:
                     clustered_sijs = (1 + clustered_sijs) / 2
             else:
@@ -891,14 +826,10 @@ def compute_global_ordering(
                 )
 
             elif submod_function == "disp_min_pc":
-                obj = submodlib.DisparityMinFunction(
-                    n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs
-                )
+                obj = submodlib.DisparityMinFunction(n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs)
 
             elif submod_function == "disp_sum_pc":
-                obj = submodlib.DisparitySumFunction(
-                    n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs
-                )
+                obj = submodlib.DisparitySumFunction(n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs)
 
             if submod_function == "disp_min_pc":
                 clustergreedyList = obj.maximize(
@@ -916,27 +847,16 @@ def compute_global_ordering(
                     stopIfNegativeGain=False,
                     verbose=False,
                 )
-            rem_elem = list(
-                set(range(cluster_embeddings.shape[0])).difference(
-                    set([x[0] for x in clustergreedyList])
-                )
-            )[0]
+            rem_elem = list(set(range(cluster_embeddings.shape[0])).difference(set([x[0] for x in clustergreedyList])))[0]
             rem_gain = clustergreedyList[-1][1]
             clustergreedyList.append((rem_elem, rem_gain))
-            clusteredgreedylist_with_orig_idxs = [
-                (idxs[x[0]], x[1]) for x in clustergreedyList
-            ]
+            clusteredgreedylist_with_orig_idxs = [(idxs[x[0]], x[1]) for x in clustergreedyList]
             greedyList.extend(clusteredgreedylist_with_orig_idxs)
             del obj
             clustered_knn = np.argsort(clustered_dist, axis=1)[:, :knn].tolist()
             for i in range(len(idxs)):
                 data_knn[idxs[i]] = [idxs[j] for j in clustered_knn[i]]
-            clustered_r2 = np.nonzero(
-                clustered_dist
-                <= max(
-                    1e-5, clustered_dist.mean() - r2_coefficient * clustered_dist.std()
-                )
-            )
+            clustered_r2 = np.nonzero(clustered_dist <= max(1e-5, clustered_dist.mean() - r2_coefficient * clustered_dist.std()))
             clustered_r2 = zip(clustered_r2[0].tolist(), clustered_r2[1].tolist())
             for x in clustered_r2:
                 if idxs[x[0]] in data_r2_dict.keys():
@@ -972,6 +892,7 @@ def compute_stochastic_greedy_subsets(
     n_subsets=300,
     partition_mode="native",
     train_dataset=None,
+    epsilon=0.001,
 ):  # Drunk hack
     """
     Return greedy ordering and gains with different submodular functions as the global order.
@@ -996,10 +917,7 @@ def compute_stochastic_greedy_subsets(
         # Get the image-wise label:
         #   - When there are multiple for an image return the most frequent
         #   - All train_labels then are on the same order of magnitude.
-        train_labels = [
-            train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3])
-            for i in range(len(train_dataset))
-        ]
+        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
     elif partition_mode == "native":
         pass
     else:
@@ -1011,9 +929,7 @@ def compute_stochastic_greedy_subsets(
         # TODO: Fix in more sensible place (segformer train embeddings generation)
         if metric in ["rbf_kernel", "dot", "cossim"]:  # 1D embedding vector
             if len(embeddings.shape) == 3:
-                embeddings = embeddings.reshape(
-                    [embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]]
-                )
+                embeddings = embeddings.reshape([embeddings.shape[0], embeddings.shape[1] * embeddings.shape[2]])
 
             data_dist = get_cdist(embeddings)
 
@@ -1022,21 +938,15 @@ def compute_stochastic_greedy_subsets(
             elif metric == "dot":
                 data_sijs = get_dot_product(embeddings)
                 if submod_function in ["disp_min", "disp_sum"]:
-                    data_sijs = (data_sijs - np.min(data_sijs)) / (
-                        np.max(data_sijs) - np.min(data_sijs)
-                    )
+                    data_sijs = (data_sijs - np.min(data_sijs)) / (np.max(data_sijs) - np.min(data_sijs))
                 else:
                     if np.min(data_sijs) < 0:
                         data_sijs = data_sijs - np.min(data_sijs)
             elif metric == "cossim":
-                normalized_embeddings = embeddings / np.linalg.norm(
-                    embeddings, axis=1, keepdims=True
-                )
+                normalized_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
                 data_sijs = get_dot_product(normalized_embeddings)
                 if submod_function in ["disp_min", "disp_sum"]:
-                    data_sijs = (data_sijs - np.min(data_sijs)) / (
-                        np.max(data_sijs) - np.min(data_sijs)
-                    )
+                    data_sijs = (data_sijs - np.min(data_sijs)) / (np.max(data_sijs) - np.min(data_sijs))
                 else:
                     data_sijs = (data_sijs + 1) / 2
         elif metric in [
@@ -1058,14 +968,10 @@ def compute_stochastic_greedy_subsets(
             raise ValueError("Please enter a valid metric")
 
     if submod_function == "fl":
-        obj = submodlib.FacilityLocationFunction(
-            n=embeddings.shape[0], separate_rep=False, mode="dense", sijs=data_sijs
-        )
+        obj = submodlib.FacilityLocationFunction(n=embeddings.shape[0], separate_rep=False, mode="dense", sijs=data_sijs)
 
     elif submod_function == "logdet":
-        obj = submodlib.LogDeterminantFunction(
-            n=embeddings.shape[0], mode="dense", lambdaVal=1, sijs=data_sijs
-        )
+        obj = submodlib.LogDeterminantFunction(n=embeddings.shape[0], mode="dense", lambdaVal=1, sijs=data_sijs)
 
     elif submod_function == "gc":
         obj = submodlib.GraphCutFunction(
@@ -1077,14 +983,10 @@ def compute_stochastic_greedy_subsets(
         )
 
     elif submod_function == "disp_min":
-        obj = submodlib.DisparityMinFunction(
-            n=embeddings.shape[0], mode="dense", sijs=data_sijs
-        )
+        obj = submodlib.DisparityMinFunction(n=embeddings.shape[0], mode="dense", sijs=data_sijs)
 
     elif submod_function == "disp_sum":
-        obj = submodlib.DisparitySumFunction(
-            n=embeddings.shape[0], mode="dense", sijs=data_sijs
-        )
+        obj = submodlib.DisparitySumFunction(n=embeddings.shape[0], mode="dense", sijs=data_sijs)
 
     subsets = []
     total_time = 0
@@ -1101,7 +1003,7 @@ def compute_stochastic_greedy_subsets(
                 subset = obj.maximize(
                     budget=budget,
                     optimizer="StochasticGreedy",
-                    epsilon=0.001,
+                    epsilon=epsilon,
                     stopIfZeroGain=False,
                     stopIfNegativeGain=False,
                     verbose=False,
@@ -1110,7 +1012,7 @@ def compute_stochastic_greedy_subsets(
                 subset = obj.maximize(
                     budget=budget,
                     optimizer="LazierThanLazyGreedy",
-                    epsilon=0.001,
+                    epsilon=epsilon,
                     stopIfZeroGain=False,
                     stopIfNegativeGain=False,
                     verbose=False,
@@ -1118,6 +1020,7 @@ def compute_stochastic_greedy_subsets(
             subsets.append(subset)
             total_time += time.time() - st_time
     else:
+        raise NotImplementedError("Epsilon from config not propogated to per cluster stochastic subset generation")
         clusters = set(train_labels)
         # Label-wise Partition
         cluster_idxs = {}
@@ -1152,21 +1055,15 @@ def compute_stochastic_greedy_subsets(
                 elif metric == "dot":
                     clustered_sijs = get_dot_product(cluster_embeddings)
                     if submod_function in ["disp_min_pc", "disp_sum_pc"]:
-                        clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (
-                            np.max(clustered_sijs) - np.min(clustered_sijs)
-                        )
+                        clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (np.max(clustered_sijs) - np.min(clustered_sijs))
                     else:
                         if np.min(clustered_sijs) < 0:
                             clustered_sijs = clustered_sijs - np.min(clustered_sijs)
                 elif metric == "cossim":
-                    normalized_embeddings = cluster_embeddings / np.linalg.norm(
-                        cluster_embeddings, axis=1, keepdims=True
-                    )
+                    normalized_embeddings = cluster_embeddings / np.linalg.norm(cluster_embeddings, axis=1, keepdims=True)
                     clustered_sijs = get_dot_product(normalized_embeddings)
                     if submod_function in ["disp_min_pc", "disp_sum_pc"]:
-                        clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (
-                            np.max(clustered_sijs) - np.min(clustered_sijs)
-                        )
+                        clustered_sijs = (clustered_sijs - np.min(clustered_sijs)) / (np.max(clustered_sijs) - np.min(clustered_sijs))
                     else:
                         clustered_sijs = (1 + clustered_sijs) / 2
                 else:
@@ -1196,14 +1093,10 @@ def compute_stochastic_greedy_subsets(
                     )
 
                 elif submod_function == "disp_min_pc":
-                    obj = submodlib.DisparityMinFunction(
-                        n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs
-                    )
+                    obj = submodlib.DisparityMinFunction(n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs)
 
                 elif submod_function == "disp_sum_pc":
-                    obj = submodlib.DisparitySumFunction(
-                        n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs
-                    )
+                    obj = submodlib.DisparitySumFunction(n=cluster_embeddings.shape[0], mode="dense", sijs=clustered_sijs)
                 # print(budget, per_cls_budget, per_cls_cnt)
                 if submod_function in ["disp_min_pc", "gc_pc"]:
                     # print(cluster_idx, per_cls_budget[cluster_idx], cluster_embeddings.shape[0])
@@ -1219,11 +1112,7 @@ def compute_stochastic_greedy_subsets(
                             costs=None,
                             costSensitiveGreedy=False,
                         )
-                        rem_elem = list(
-                            set(range(cluster_embeddings.shape[0])).difference(
-                                set([x[0] for x in clustergreedyList])
-                            )
-                        )[0]
+                        rem_elem = list(set(range(cluster_embeddings.shape[0])).difference(set([x[0] for x in clustergreedyList])))[0]
                         rem_gain = clustergreedyList[-1][1]
                         clustergreedyList.append((rem_elem, rem_gain))
                     else:
@@ -1252,11 +1141,7 @@ def compute_stochastic_greedy_subsets(
                             costs=None,
                             costSensitiveGreedy=False,
                         )
-                        rem_elem = list(
-                            set(range(cluster_embeddings.shape[0])).difference(
-                                set([x[0] for x in clustergreedyList])
-                            )
-                        )[0]
+                        rem_elem = list(set(range(cluster_embeddings.shape[0])).difference(set([x[0] for x in clustergreedyList])))[0]
                         rem_gain = clustergreedyList[-1][1]
                         clustergreedyList.append((rem_elem, rem_gain))
                     else:
@@ -1272,9 +1157,7 @@ def compute_stochastic_greedy_subsets(
                             costSensitiveGreedy=False,
                         )
                 cluster_idx += 1
-                clusteredgreedylist_with_orig_idxs = [
-                    (idxs[x[0]], x[1]) for x in clustergreedyList
-                ]
+                clusteredgreedylist_with_orig_idxs = [(idxs[x[0]], x[1]) for x in clustergreedyList]
                 subset.extend(clusteredgreedylist_with_orig_idxs)
                 del obj
             subset.sort(key=lambda x: x[1], reverse=True)
@@ -1293,9 +1176,7 @@ def compute_stochastic_greedy_subsets(
     return subsets
 
 
-def load_dataset(
-    dataset_name, data_dir, seed, return_valid=False, return_test=False, config=None
-):
+def load_dataset(dataset_name, data_dir, seed, return_valid=False, return_test=False, config=None):
     if dataset_name == "glue_sst2":
         """
         Load GLUE SST2 dataset. We are only using train and validation splits since the test split doesn't come with gold labels. For testing purposes, we use 5% of train
@@ -1309,9 +1190,7 @@ def load_dataset(
         num_fulltrn = len(fullset)
         num_test = int(num_fulltrn * test_set_fraction)
         num_trn = num_fulltrn - num_test
-        trainset, testset = random_split(
-            fullset, [num_trn, num_test], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, testset = random_split(fullset, [num_trn, num_test], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "trec6":
         trec6_dataset = datasets.load_dataset("trec", cache_dir=data_dir)
@@ -1322,9 +1201,7 @@ def load_dataset(
         num_fulltrn = len(fullset)
         num_val = int(num_fulltrn * validation_set_fraction)
         num_trn = num_fulltrn - num_val
-        trainset, valset = random_split(
-            fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "imdb":
         trec6_dataset = datasets.load_dataset("imdb", cache_dir=data_dir)
@@ -1335,9 +1212,7 @@ def load_dataset(
         num_fulltrn = len(fullset)
         num_val = int(num_fulltrn * validation_set_fraction)
         num_trn = num_fulltrn - num_val
-        trainset, valset = random_split(
-            fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "rotten_tomatoes":
         dataset = datasets.load_dataset("rotten_tomatoes", cache_dir=data_dir)
@@ -1352,66 +1227,42 @@ def load_dataset(
         testset = dataset["test"]
 
     elif dataset_name == "cifar10":
-        fullset = torchvision.datasets.CIFAR10(
-            root=data_dir, train=True, download=True, transform=None
-        )
-        testset = torchvision.datasets.CIFAR10(
-            root=data_dir, train=False, download=True, transform=None
-        )
+        fullset = torchvision.datasets.CIFAR10(root=data_dir, train=True, download=True, transform=None)
+        testset = torchvision.datasets.CIFAR10(root=data_dir, train=False, download=True, transform=None)
 
         validation_set_fraction = 0.1
         num_fulltrn = len(fullset)
         num_val = int(num_fulltrn * validation_set_fraction)
         num_trn = num_fulltrn - num_val
-        trainset, valset = random_split(
-            fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "cifar100":
-        fullset = torchvision.datasets.CIFAR100(
-            root=data_dir, train=True, download=True, transform=None
-        )
-        testset = torchvision.datasets.CIFAR100(
-            root=data_dir, train=False, download=True, transform=None
-        )
+        fullset = torchvision.datasets.CIFAR100(root=data_dir, train=True, download=True, transform=None)
+        testset = torchvision.datasets.CIFAR100(root=data_dir, train=False, download=True, transform=None)
 
         validation_set_fraction = 0.1
         num_fulltrn = len(fullset)
         num_val = int(num_fulltrn * validation_set_fraction)
         num_trn = num_fulltrn - num_val
-        trainset, valset = random_split(
-            fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "tinyimagenet":
-        fullset = TinyImageNet(
-            root=data_dir, split="train", download=True, transform=None
-        )
-        testset = TinyImageNet(
-            root=data_dir, split="val", download=True, transform=None
-        )
+        fullset = TinyImageNet(root=data_dir, split="train", download=True, transform=None)
+        testset = TinyImageNet(root=data_dir, split="val", download=True, transform=None)
         validation_set_fraction = 0.1
         num_fulltrn = len(fullset)
         num_val = int(num_fulltrn * validation_set_fraction)
         num_trn = num_fulltrn - num_val
-        trainset, valset = random_split(
-            fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "mnist":
-        fullset = torchvision.datasets.MNIST(
-            root=data_dir, train=True, download=True, transform=None
-        )
-        testset = torchvision.datasets.MNIST(
-            root=data_dir, train=False, download=True, transform=None
-        )
+        fullset = torchvision.datasets.MNIST(root=data_dir, train=True, download=True, transform=None)
+        testset = torchvision.datasets.MNIST(root=data_dir, train=False, download=True, transform=None)
         validation_set_fraction = 0.1
         num_fulltrn = len(fullset)
         num_val = int(num_fulltrn * validation_set_fraction)
         num_trn = num_fulltrn - num_val
-        trainset, valset = random_split(
-            fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed)
-        )
+        trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
     elif dataset_name == "cityscape":
         crop_size = (config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
@@ -1489,9 +1340,7 @@ def load_dataset(
         return trainset, valset, testset
 
 
-def generate_text_similarity_kernel(
-    dataset, model, stats=True, seed=42, data_dir="../data", device="cpu"
-):
+def generate_text_similarity_kernel(dataset, model, stats=True, seed=42, data_dir="../data", device="cpu"):
     # Assertion Check:
     assert (dataset in list(SENTENCE_MAPPINGS.keys())) and (
         dataset in list(LABEL_MAPPINGS.keys())
@@ -1508,11 +1357,7 @@ def generate_text_similarity_kernel(
         train_labels = train_dataset[LABEL_MAPPINGS[dataset]]
 
     # Load embeddings from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl")):
         train_embeddings = compute_text_embeddings(model, train_sentences, device)
         store_embeddings(
             os.path.join(
@@ -1530,16 +1375,10 @@ def generate_text_similarity_kernel(
             )
         )
 
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5")):
         data_dist = get_cdist(train_embeddings)
         with h5py.File(
-            os.path.join(
-                os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5"
-            ),
+            os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5"),
             "w",
         ) as hf:
             hf.create_dataset("dist_kernel", data=data_dist)
@@ -1549,9 +1388,7 @@ def generate_text_similarity_kernel(
             plt.savefig(dataset + "_" + model + "_dist_hist.png")
 
 
-def generate_image_similarity_kernel(
-    dataset, model, stats=True, seed=42, data_dir="../data", device="cpu"
-):
+def generate_image_similarity_kernel(dataset, model, stats=True, seed=42, data_dir="../data", device="cpu"):
     # Load Dataset
     train_dataset = load_dataset(dataset, data_dir, seed)
 
@@ -1559,11 +1396,7 @@ def generate_image_similarity_kernel(
     train_labels = [x[1] for x in train_dataset]
 
     # Load embeddings from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl")):
         if model[:3] == "ViT":
             train_embeddings = compute_vit_image_embeddings(train_images, device)
         else:
@@ -1584,16 +1417,10 @@ def generate_image_similarity_kernel(
             )
         )
 
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5")):
         data_dist = get_cdist(train_embeddings)
         with h5py.File(
-            os.path.join(
-                os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5"
-            ),
+            os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_dist_kernel.h5"),
             "w",
         ) as hf:
             hf.create_dataset("dist_kernel", data=data_dist)
@@ -1628,20 +1455,14 @@ def generate_image_global_order(
             total=len(train_dataset),
             desc=f"loading {dataset} dataset for global ordering generation",
         ):
-            train_images.append(
-                Image.fromarray(np.transpose(x[0], (1, 2, 0)), mode="RGB")
-            )
+            train_images.append(Image.fromarray(np.transpose(x[0], (1, 2, 0)), mode="RGB"))
             train_labels.append(x[1])
     else:
         train_images = [x[0] for x in train_dataset]
         train_labels = [x[1] for x in train_dataset]
 
     # Load embeddings from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl")):
         if model == "ViT":
             train_embeddings = compute_vit_image_embeddings(train_images, device)
         elif model == "ViT_cls":
@@ -1682,46 +1503,19 @@ def generate_image_global_order(
         os.path.exists(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             )
         )
         and os.path.exists(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(r2_coefficient)
-                + "_global_r2.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(r2_coefficient) + "_global_r2.pkl",
             )
         )
         and os.path.exists(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(knn)
-                + "_global_knn.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(knn) + "_global_knn.pkl",
             )
         )
     ):
@@ -1739,48 +1533,21 @@ def generate_image_global_order(
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             ),
             {"globalorder": global_order, "cluster_idxs": cluster_idxs},
         )
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(r2_coefficient)
-                + "_global_r2.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(r2_coefficient) + "_global_r2.pkl",
             ),
             {"globalr2": global_r2, "cluster_idxs": cluster_idxs},
         )
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(knn)
-                + "_global_knn.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(knn) + "_global_knn.pkl",
             ),
             {"globalknn": global_knn, "cluster_idxs": cluster_idxs},
         )
@@ -1788,64 +1555,28 @@ def generate_image_global_order(
         global_order = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             ),
             "globalorder",
         )
         cluster_idxs = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             ),
             "cluster_idxs",
         )
         global_r2 = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(r2_coefficient)
-                + "_global_r2.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(r2_coefficient) + "_global_r2.pkl",
             ),
             "globalr2",
         )
         global_knn = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(knn)
-                + "_global_knn.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(knn) + "_global_knn.pkl",
             ),
             "globalknn",
         )
@@ -1880,11 +1611,7 @@ def generate_text_global_order(
         train_labels = train_dataset[LABEL_MAPPINGS[dataset]]
 
     # Load embeddings from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl")):
         train_embeddings = compute_text_embeddings(model, train_sentences, device)
         store_embeddings(
             os.path.join(
@@ -1907,46 +1634,19 @@ def generate_text_global_order(
         os.path.exists(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             )
         )
         and os.path.exists(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(r2_coefficient)
-                + "_global_r2.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(r2_coefficient) + "_global_r2.pkl",
             )
         )
         and os.path.exists(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(knn)
-                + "_global_knn.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(knn) + "_global_knn.pkl",
             )
         )
     ):
@@ -1962,48 +1662,21 @@ def generate_text_global_order(
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             ),
             {"globalorder": global_order, "cluster_idxs": cluster_idxs},
         )
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(r2_coefficient)
-                + "_global_r2.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(r2_coefficient) + "_global_r2.pkl",
             ),
             {"globalr2": global_r2, "cluster_idxs": cluster_idxs},
         )
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(knn)
-                + "_global_knn.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(knn) + "_global_knn.pkl",
             ),
             {"globalknn": global_knn, "cluster_idxs": cluster_idxs},
         )
@@ -2011,64 +1684,28 @@ def generate_text_global_order(
         global_order = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             ),
             "globalorder",
         )
         cluster_idxs = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_global_order.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_global_order.pkl",
             ),
             "cluster_idxs",
         )
         global_r2 = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(r2_coefficient)
-                + "_global_r2.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(r2_coefficient) + "_global_r2.pkl",
             ),
             "globalr2",
         )
         global_knn = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(knn)
-                + "_global_knn.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(knn) + "_global_knn.pkl",
             ),
             "globalknn",
         )
@@ -2083,11 +1720,13 @@ def generate_image_stochastic_subsets(
     kw,
     fraction,
     n_subsets,
+    stochastic_subsets_file,
     seed=42,
     data_dir="../data",
     device="cpu",
     config=None,
     partition_mode="native",
+    epsilon=0.001,
 ):
     # Load Dataset
     train_dataset = load_dataset(dataset, data_dir, seed, config=config)
@@ -2101,20 +1740,14 @@ def generate_image_stochastic_subsets(
             total=len(train_dataset),
             desc=f"loading {dataset} dataset for stochastic subset generation",
         ):
-            train_images.append(
-                Image.fromarray(np.transpose(x[0], (1, 2, 0)), mode="RGB")
-            )
+            train_images.append(Image.fromarray(np.transpose(x[0], (1, 2, 0)), mode="RGB"))
             train_labels.append(x[1])
     else:
         train_images = [x[0] for x in train_dataset]
         train_labels = [x[1] for x in train_dataset]
 
     # Load embeddings from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl")):
         if model == "ViT":
             train_embeddings = compute_vit_image_embeddings(train_images, device)
         elif model == "ViT_cls":
@@ -2124,17 +1757,11 @@ def generate_image_stochastic_subsets(
         elif model == "dino_cls":
             train_embeddings = compute_dino_cls_image_embeddings(train_images, device)
         elif model == "oracle_spat":
-            train_embeddings = compute_oracle_image_embeddings(
-                train_images, device, mode="oracle_spat"
-            )
+            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_spat")
         elif model == "oracle_context":
-            train_embeddings = compute_oracle_image_embeddings(
-                train_images, device, mode="oracle_context"
-            )
+            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_context")
         elif model == "oracle_feature_flat":
-            train_embeddings = compute_oracle_image_embeddings(
-                train_images, device, mode="oracle_feature_flat"
-            )
+            train_embeddings = compute_oracle_image_embeddings(train_images, device, mode="oracle_feature_flat")
         elif model == "sam":
             raise NotImplementedError
         elif model == "segformer":
@@ -2160,23 +1787,7 @@ def generate_image_stochastic_subsets(
         )
 
     # Load stochastic subsets from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir),
-            dataset
-            + "_"
-            + model
-            + "_"
-            + metric
-            + "_"
-            + submod_function
-            + "_"
-            + str(kw)
-            + "_"
-            + str(fraction)
-            + "_stochastic_subsets.pkl",
-        )
-    ):
+    if not os.path.exists(stochastic_subsets_file):
         stochastic_subsets = compute_stochastic_greedy_subsets(
             train_embeddings,
             submod_function,
@@ -2187,42 +1798,15 @@ def generate_image_stochastic_subsets(
             n_subsets=n_subsets,
             partition_mode=partition_mode,
             train_dataset=train_dataset,  # FIXME: Drunk hack
+            epsilon=epsilon,
         )
         dict2pickle(
-            os.path.join(
-                os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_"
-                + str(fraction)
-                + "_stochastic_subsets.pkl",
-            ),
+            stochastic_subsets_file,
             {"stochastic_subsets": stochastic_subsets},
         )
     else:
         stochastic_subsets = pickle2dict(
-            os.path.join(
-                os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_"
-                + str(fraction)
-                + "_stochastic_subsets.pkl",
-            ),
+            stochastic_subsets_file,
             "stochastic_subsets",
         )
     return stochastic_subsets
@@ -2256,11 +1840,7 @@ def generate_text_stochastic_subsets(
         train_labels = train_dataset[LABEL_MAPPINGS[dataset]]
 
     # Load embeddings from pickle file if it exists otherwise compute them and store them.
-    if not os.path.exists(
-        os.path.join(
-            os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl"
-        )
-    ):
+    if not os.path.exists(os.path.join(os.path.abspath(data_dir), dataset + "_" + model + "_train_embeddings.pkl")):
         train_embeddings = compute_text_embeddings(model, train_sentences, device)
         store_embeddings(
             os.path.join(
@@ -2282,18 +1862,7 @@ def generate_text_stochastic_subsets(
     if not os.path.exists(
         os.path.join(
             os.path.abspath(data_dir),
-            dataset
-            + "_"
-            + model
-            + "_"
-            + metric
-            + "_"
-            + submod_function
-            + "_"
-            + str(kw)
-            + "_"
-            + str(fraction)
-            + "_stochastic_subsets.pkl",
+            dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_" + str(fraction) + "_stochastic_subsets.pkl",
         )
     ):
         stochastic_subsets = compute_stochastic_greedy_subsets(
@@ -2308,18 +1877,7 @@ def generate_text_stochastic_subsets(
         dict2pickle(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_"
-                + str(fraction)
-                + "_stochastic_subsets.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_" + str(fraction) + "_stochastic_subsets.pkl",
             ),
             {"stochastic_subsets": stochastic_subsets},
         )
@@ -2327,18 +1885,7 @@ def generate_text_stochastic_subsets(
         stochastic_subsets = pickle2dict(
             os.path.join(
                 os.path.abspath(data_dir),
-                dataset
-                + "_"
-                + model
-                + "_"
-                + metric
-                + "_"
-                + submod_function
-                + "_"
-                + str(kw)
-                + "_"
-                + str(fraction)
-                + "_stochastic_subsets.pkl",
+                dataset + "_" + model + "_" + metric + "_" + submod_function + "_" + str(kw) + "_" + str(fraction) + "_stochastic_subsets.pkl",
             ),
             "stochastic_subsets",
         )

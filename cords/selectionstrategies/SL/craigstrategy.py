@@ -6,6 +6,7 @@ import torch
 from scipy.sparse import csr_matrix
 from torch.utils.data.sampler import SubsetRandomSampler
 from .dataselectionstrategy import DataSelectionStrategy
+from tqdm import tqdm
 
 
 class CRAIGStrategy(DataSelectionStrategy):
@@ -33,7 +34,7 @@ class CRAIGStrategy(DataSelectionStrategy):
     Both the optimization problems given above are an instance of facility location problems which is a submodular function. Hence, it can be optimally solved using greedy selection methods.
 
     Parameters
-	----------
+        ----------
     trainloader: class
         Loading the training data using pytorch DataLoader
     valloader: class
@@ -53,7 +54,7 @@ class CRAIGStrategy(DataSelectionStrategy):
     selection_type: str
         Type of selection:
          - 'PerClass': PerClass Implementation where the facility location problem is solved for each class seperately for speed ups.
-         - 'Supervised':  Supervised Implementation where the facility location problem is solved using a sparse similarity matrix by 
+         - 'Supervised':  Supervised Implementation where the facility location problem is solved using a sparse similarity matrix by
                           assigning the similarity of a point with other points of different class to zero.
          - 'PerBatch': PerBatch Implementation where the facility location problem tries to select subset of mini-batches.
     logger : class
@@ -62,9 +63,7 @@ class CRAIGStrategy(DataSelectionStrategy):
         Type of Greedy Algorithm
     """
 
-    def __init__(self, trainloader, valloader, model, loss,
-                 device, num_classes, linear_layer, if_convex,
-                 selection_type, logger, optimizer='lazy'):
+    def __init__(self, trainloader, valloader, model, loss, device, num_classes, linear_layer, if_convex, selection_type, logger, optimizer="lazy"):
         """
         Constructer method
         """
@@ -92,14 +91,26 @@ class CRAIGStrategy(DataSelectionStrategy):
         dist: Tensor
             Output tensor
         """
-
-        n = x.size(0)
-        m = y.size(0)
-        d = x.size(1)
-        x = x.unsqueeze(1).expand(n, m, d)
-        y = y.unsqueeze(0).expand(n, m, d)
-        dist = torch.pow(x - y, exp).sum(2)
-        # dist = torch.exp(-1 * torch.pow(x - y, 2).sum(2))
+        try:  # HRNet 2D embeddings
+            # Take mean over channels
+            # x = x.mean(axis=1)
+            # y = y.mean(axis=1)
+            n = x.size(0)
+            m = y.size(0)
+            d = x.size(1)
+            dist = torch.norm(x.unsqueeze(1).expand(n, m, d, d) - y.unsqueeze(0).expand(n, m, d, d), p="fro", dim=(2, 3))  # vectorised
+            # dist = torch.zeros((n, m))
+            # for i in range(n):  # FIXME: very inefficient!
+            #     for j in range(m):
+            #         dist[i][j] = torch.norm(x[i] - y[j], p="fro")
+        except Exception as e:  # 2D embedding vectors
+            n = x.size(0)
+            m = y.size(0)
+            d = x.size(1)
+            x = x.unsqueeze(1).expand(n, m, d)
+            y = y.unsqueeze(0).expand(n, m, d)
+            dist = torch.pow(x - y, exp).sum(2)
+            # dist = torch.exp(-1 * torch.pow(x - y, 2).sum(2))
         return dist
 
     def compute_score(self, model_params, idxs):
@@ -114,10 +125,18 @@ class CRAIGStrategy(DataSelectionStrategy):
             The indices
         """
 
-        trainset = self.trainloader.sampler.data_source
-        subset_loader = torch.utils.data.DataLoader(trainset, batch_size=self.trainloader.batch_size, shuffle=False,
-                                                    sampler=SubsetRandomSampler(idxs),
-                                                    pin_memory=True, collate_fn=self.trainloader.collate_fn)
+        try:
+            trainset = self.trainloader.sampler.data_source
+        except AttributeError as e:
+            trainset = self.trainloader.sampler.dataset
+        subset_loader = torch.utils.data.DataLoader(
+            trainset,
+            batch_size=self.trainloader.batch_size,
+            shuffle=False,
+            sampler=SubsetRandomSampler(idxs),
+            pin_memory=True,
+            collate_fn=self.trainloader.collate_fn,
+        )
         self.model.load_state_dict(model_params)
         self.N = 0
         g_is = []
@@ -125,49 +144,84 @@ class CRAIGStrategy(DataSelectionStrategy):
         if self.if_convex:
             for batch_idx, (inputs, targets) in enumerate(subset_loader):
                 inputs, targets = inputs, targets
-                if self.selection_type == 'PerBatch':
+                if self.selection_type == "PerBatch":
                     self.N += 1
                     g_is.append(inputs.view(inputs.size()[0], -1).mean(dim=0).view(1, -1))
                 else:
                     self.N += inputs.size()[0]
                     g_is.append(inputs.view(inputs.size()[0], -1))
         else:
-            embDim = self.model.get_embedding_dim()
-            for batch_idx, (inputs, targets) in enumerate(subset_loader):
-                inputs, targets = inputs.to(self.device), targets.to(self.device, non_blocking=True)
-                if self.selection_type == 'PerBatch':
-                    self.N += 1
-                else:
-                    self.N += inputs.size()[0]
-                out, l1 = self.model(inputs, freeze=True, last=True)
-                loss = self.loss(out, targets).sum()
-                l0_grads = torch.autograd.grad(loss, out)[0]
-                if self.linear_layer:
-                    l0_expand = torch.repeat_interleave(l0_grads, embDim, dim=1)
-                    l1_grads = l0_expand * l1.repeat(1, self.num_classes)
-                    if self.selection_type == 'PerBatch':
-                        g_is.append(torch.cat((l0_grads, l1_grads), dim=1).mean(dim=0).view(1, -1))
+            try:
+                embDim = self.model.get_embedding_dim()
+            except AttributeError:  # Distributed HRNet
+                embDim = self.model.module.model.get_embedding_dim()
+            try:
+                for batch_idx, (inputs, targets) in enumerate(subset_loader):
+                    inputs, targets = inputs.to(self.device), targets.to(self.device, non_blocking=True)
+                    if self.selection_type == "PerBatch":
+                        self.N += 1
                     else:
-                        g_is.append(torch.cat((l0_grads, l1_grads), dim=1))
-                else:
-                    if self.selection_type == 'PerBatch':
-                        g_is.append(l0_grads.mean(dim=0).view(1, -1))
+                        self.N += inputs.size()[0]
+                    out, l1 = self.model(inputs, freeze=True, last=True)
+                    loss = self.loss(out, targets).sum()
+                    l0_grads = torch.autograd.grad(loss, out)[0]
+                    if self.linear_layer:
+                        l0_expand = torch.repeat_interleave(l0_grads, embDim, dim=1)
+                        l1_grads = l0_expand * l1.repeat(1, self.num_classes)
+                        if self.selection_type == "PerBatch":
+                            g_is.append(torch.cat((l0_grads, l1_grads), dim=1).mean(dim=0).view(1, -1))
+                        else:
+                            g_is.append(torch.cat((l0_grads, l1_grads), dim=1))
                     else:
-                        g_is.append(l0_grads)
+                        if self.selection_type == "PerBatch":
+                            g_is.append(l0_grads.mean(dim=0).view(1, -1))
+                        else:
+                            g_is.append(l0_grads)
+            except ValueError as e:  # HRNet
+                for batch_idx, (inputs, targets, shape, names) in tqdm(enumerate(subset_loader), total=len(subset_loader), desc="computing score"):
+                    inputs, targets = inputs.to(self.device), targets.to(self.device, non_blocking=True)
+                    if self.selection_type == "PerBatch":
+                        self.N += 1
+                    else:
+                        self.N += inputs.size()[0]
+                    # out, l1 = self.model(inputs=inputs, labels=targets, freeze=True, last=True)
+                    out, l1 = self.model(inputs=inputs, labels=targets, freeze=False, last=True)
+
+                    loss = self.loss(out, targets.long()).sum()
+                    l0_grads = torch.autograd.grad(loss, out)[0]
+
+                    # Unsure about implications of gradient calculation here.
+                    self.model.zero_grad()
+
+                    if self.linear_layer:
+                        l0_expand = torch.repeat_interleave(l0_grads, embDim, dim=1)
+                        l1_grads = l0_expand * l1.repeat(1, self.num_classes)
+                        if self.selection_type == "PerBatch":
+                            g_is.append(torch.cat((l0_grads, l1_grads), dim=1).mean(dim=0).view(1, -1))
+                        else:
+                            g_is.append(torch.cat((l0_grads, l1_grads), dim=1))
+                    else:
+                        if self.selection_type == "PerBatch":
+                            g_is.append(l0_grads.cpu().mean(dim=0).view(1, -1))  # Move to cpu to preserve gpu mem
+                        else:
+                            # g_is.append(l0_grads.cpu())  # Move to cpu to preserve gpu mem
+                            g_is.append(l0_grads.cpu().mean(axis=1))  # Move to cpu to preserve gpu mem & average along channel dimension
+
+                    # Clean up
+                    del out, l1, loss, l0_grads
 
         self.dist_mat = torch.zeros([self.N, self.N], dtype=torch.float32)
         first_i = True
-        if self.selection_type == 'PerBatch':
+        if self.selection_type == "PerBatch":
             g_is = torch.cat(g_is, dim=0)
             self.dist_mat = self.distance(g_is, g_is).cpu()
         else:
-            for i, g_i in enumerate(g_is, 0):
+            for i, g_i in tqdm(enumerate(g_is, 0), total=len(g_is), desc="Calculating distance matrix"):
                 if first_i:
                     size_b = g_i.size(0)
                     first_i = False
                 for j, g_j in enumerate(g_is, 0):
-                    self.dist_mat[i * size_b: i * size_b + g_i.size(0),
-                    j * size_b: j * size_b + g_j.size(0)] = self.distance(g_i, g_j).cpu()
+                    self.dist_mat[i * size_b : i * size_b + g_i.size(0), j * size_b : j * size_b + g_j.size(0)] = self.distance(g_i, g_j).cpu()
         self.const = torch.max(self.dist_mat).item()
         self.dist_mat = (self.const - self.dist_mat).numpy()
 
@@ -186,13 +240,13 @@ class CRAIGStrategy(DataSelectionStrategy):
             Gradient values of the input indices
         """
 
-        if self.selection_type in ['PerClass', 'PerBatch']:
+        if self.selection_type in ["PerClass", "PerBatch"]:
             gamma = [0 for i in range(len(idxs))]
             best = self.dist_mat[idxs]  # .to(self.device)
             rep = np.argmax(best, axis=0)
             for i in rep:
                 gamma[i] += 1
-        elif self.selection_type == 'Supervised':
+        elif self.selection_type == "Supervised":
             gamma = [0 for i in range(len(idxs))]
             best = self.dist_mat[idxs]  # .to(self.device)
             rep = np.argmax(best, axis=0)
@@ -209,12 +263,22 @@ class CRAIGStrategy(DataSelectionStrategy):
         kernel: ndarray
             Array of kernel values
         """
-        for batch_idx, (inputs, targets) in enumerate(self.trainloader):
-            if batch_idx == 0:
-                labels = targets
-            else:
-                tmp_target_i = targets
-                labels = torch.cat((labels, tmp_target_i), dim=0)
+        try:
+            for batch_idx, (inputs, targets) in enumerate(self.trainloader):
+                if batch_idx == 0:
+                    labels = targets
+                else:
+                    tmp_target_i = targets
+                    labels = torch.cat((labels, tmp_target_i), dim=0)
+        except ValueError as e:
+            for batch_idx, (inputs, targets, shape, names) in tqdm(
+                enumerate(self.trainloader), total=len(self.trainloader), desc="generating similarity kernel"
+            ):
+                if batch_idx == 0:
+                    labels = targets
+                else:
+                    tmp_target_i = targets
+                    labels = torch.cat((labels, tmp_target_i), dim=0)
         kernel = np.zeros((labels.shape[0], labels.shape[0]))
         for target in np.unique(labels):
             x = np.where(labels == target)[0]
@@ -247,23 +311,32 @@ class CRAIGStrategy(DataSelectionStrategy):
             List containing gradients of datapoints present in greedySet
         """
         start_time = time.time()
-        for batch_idx, (inputs, targets) in enumerate(self.trainloader):
-            if batch_idx == 0:
-                labels = targets
-            else:
-                tmp_target_i = targets
-                labels = torch.cat((labels, tmp_target_i), dim=0)
+        try:
+            for batch_idx, (inputs, targets) in enumerate(self.trainloader):
+                if batch_idx == 0:
+                    labels = targets
+                else:
+                    tmp_target_i = targets
+                    labels = torch.cat((labels, tmp_target_i), dim=0)
+        except ValueError as e:
+            for batch_idx, (inputs, targets, shape, names) in tqdm(
+                enumerate(self.trainloader), total=len(self.trainloader), desc="Loading dataset for selection"
+            ):
+                if batch_idx == 0:
+                    labels = targets
+                else:
+                    tmp_target_i = targets
+                    labels = torch.cat((labels, tmp_target_i), dim=0)
         # per_class_bud = int(budget / self.num_classes)
         total_greedy_list = []
         gammas = []
-        if self.selection_type == 'PerClass':
+        if self.selection_type == "PerClass":
             for i in range(self.num_classes):
                 idxs = torch.where(labels == i)[0]
                 self.compute_score(model_params, idxs)
-                fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
-                                                                                  n_samples=math.ceil(
-                                                                                      budget * len(idxs) / self.N_trn),
-                                                                                  optimizer=self.optimizer)
+                fl = apricot.functions.facilityLocation.FacilityLocationSelection(
+                    random_state=0, metric="precomputed", n_samples=math.ceil(budget * len(idxs) / self.N_trn), optimizer=self.optimizer
+                )
                 sim_sub = fl.fit_transform(self.dist_mat)
                 greedyList = list(np.argmax(sim_sub, axis=1))
                 gamma = self.compute_gamma(greedyList)
@@ -272,7 +345,7 @@ class CRAIGStrategy(DataSelectionStrategy):
             rand_indices = np.random.permutation(len(total_greedy_list))
             total_greedy_list = list(np.array(total_greedy_list)[rand_indices])
             gammas = list(np.array(gammas)[rand_indices])
-        elif self.selection_type == 'Supervised':
+        elif self.selection_type == "Supervised":
             idxs = torch.arange(0, self.N_trn).long()
             N = len(idxs)
             self.compute_score(model_params, idxs)
@@ -281,20 +354,19 @@ class CRAIGStrategy(DataSelectionStrategy):
             data = self.dist_mat.flatten()
             sparse_simmat = csr_matrix((data, (row.numpy(), col.numpy())), shape=(self.N_trn, self.N_trn))
             self.dist_mat = sparse_simmat
-            fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
-                                                                              n_samples=budget,
-                                                                              optimizer=self.optimizer)
+            fl = apricot.functions.facilityLocation.FacilityLocationSelection(
+                random_state=0, metric="precomputed", n_samples=budget, optimizer=self.optimizer
+            )
             sim_sub = fl.fit_transform(sparse_simmat)
             total_greedy_list = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
             gammas = self.compute_gamma(total_greedy_list)
-        elif self.selection_type == 'PerBatch':
+        elif self.selection_type == "PerBatch":
             idxs = torch.arange(self.N_trn)
             N = len(idxs)
             self.compute_score(model_params, idxs)
-            fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
-                                                                              n_samples=math.ceil(
-                                                                                  budget / self.trainloader.batch_size),
-                                                                              optimizer=self.optimizer)
+            fl = apricot.functions.facilityLocation.FacilityLocationSelection(
+                random_state=0, metric="precomputed", n_samples=math.ceil(budget / self.trainloader.batch_size), optimizer=self.optimizer
+            )
             sim_sub = fl.fit_transform(self.dist_mat)
             temp_list = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
             gammas_temp = self.compute_gamma(temp_list)
@@ -305,5 +377,5 @@ class CRAIGStrategy(DataSelectionStrategy):
                 gammas.extend([gammas_temp[i]] * len(tmp))
         end_time = time.time()
         total_greedy_list = [int(x) for x in total_greedy_list]
-        self.logger.debug("CRAIG strategy data selection time is: %.4f", end_time-start_time)
+        self.logger.debug("CRAIG strategy data selection time is: %.4f", end_time - start_time)
         return total_greedy_list, torch.FloatTensor(gammas)

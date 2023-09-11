@@ -5,3 +5,4 @@ from .submoddataloader import GraphCutDataLoader
 from .submoddataloader import SaturatedCoverageDataLoader
 from .submoddataloader import SumRedundancyDataLoader
 from .milofixeddataloader import MILOFixedDataLoader
+from .leastconfidenceuncertainty import LeastConfidenceUncertainty

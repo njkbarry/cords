@@ -9,3 +9,5 @@ from .adapweightsdataloader import AdapWeightsDataLoader
 from .weightedrandomdataloader import WeightedRandomDataLoader
 from .stochasticgreedydataloader import StochasticGreedyDataLoader
 from .milodataloader import MILODataLoader
+from .classweightedrandomdataloader import ClassWeightedRandomDataLoader
+from .pmwadaptiverandomdataloader import PMWAdaptiveRandomDataLoader

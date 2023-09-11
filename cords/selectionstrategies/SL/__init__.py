@@ -9,3 +9,4 @@ from .selconstrategy import SELCONstrategy
 from .adapweightsstrategy import AdapWeightsStrategy
 from .stochasticgreedyexplorationstrategy import StochasticGreedyExplorationStrategy
 from .weightedrandomexplorationstrategy import WeightedRandomExplorationStrategy
+from .classweightedrandomexplorationstrategy import ClassWeightedRandomExplorationStrategy

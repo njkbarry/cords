@@ -638,31 +638,7 @@ def compute_global_ordering(
     """
 
     # Partition methods for Semantic segmentation datasets
-    partition_mode = "pixel_mode"
-
-    if partition_mode == "no_partition":
-        print("DEV EXPERIMENT: NO PARTITIONING!")
-        train_labels = [0] * len(train_labels)
-    elif partition_mode == "pixel_mode":
-        # Lazily approximate image-wise label based on most frequent segmentation mask vlaue.
-        # Reasonable approximation in ImageNet style images consistent with pascal_ctx
-        print("DEV EXPERIMENT: IMAGE-WISE PARTITIONING!")
-        tmp = []
-        for mask in train_labels:
-            values, counts = np.unique(mask, return_counts=True)
-            index = np.argmax(counts)
-            tmp.append(index)
-        train_labels = tmp
-    elif partition_mode == "pascal_image_label":
-        # Get the image-wise label:
-        #   - When there are multiple for an image return the most frequent
-        #   - All train_labels then are on the same order of magnitude.
-        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
-    elif partition_mode == "native":
-        pass
-    else:
-        raise NotImplementedError()
-
+    train_labels = partition_dataset(train_labels=train_labels, partition_mode=partition_mode, train_dataset=train_dataset)
     if submod_function not in [
         "supfl",
         "gc_pc",
@@ -764,8 +740,8 @@ def compute_global_ordering(
         rem_gain = greedyList[-1][1]
         greedyList.append((rem_elem, rem_gain))
     else:
-        print("New metrics not implemented for current submodular functions")
-        raise NotImplementedError
+        print("WARNING PARTITION CLUSTER MILO CONFIGURATION (DO NOT USE 2D EMBEDDINGS HERE)")
+        # raise NotImplementedError
         clusters = set(train_labels)
         data_knn = [[] for _ in range(len(train_labels))]
         data_r2_dict = {}
@@ -882,6 +858,49 @@ def compute_global_ordering(
     return greedyList, knn_list, r2_list, cluster_idxs
 
 
+def partition_dataset(train_labels, partition_mode: str, train_dataset):
+    # TODO: Create enum
+    # Partition methods for Semantic segmentation datasets
+    if partition_mode == "no_partition":
+        print("DEV EXPERIMENT: NO PARTITIONING!")
+        train_labels = [0] * len(train_labels)
+    elif partition_mode == "pixel_mode":
+        # Lazily approximate image-wise label based on most frequent segmentation mask vlaue.
+        # Reasonable approximation in ImageNet style images consistent with pascal_ctx
+        print("DEV EXPERIMENT: IMAGE-WISE PARTITIONING!")
+        tmp = []
+        for mask in train_labels:
+            values, counts = np.unique(mask, return_counts=True)
+            index = np.argmax(counts)
+            tmp.append(index)
+        train_labels = tmp
+    elif partition_mode == "occurence_class_proportion":
+        """
+        Find partition by the least frequently occuring class that is present in the image
+        """
+        print("DEV EXPERIMENT: COCCURENCE-CLASS PARTITIONING!")
+        tmp = []
+        for mask in train_labels:
+            values, counts = np.unique(mask, return_counts=True)
+            index = np.nanargmin([train_dataset.get_occurence_class_proportion(c) for c in values])
+            if values[index] == -1:
+                tmp.append(4)
+            else:
+                tmp.append(values[index])
+        train_labels = tmp
+
+    elif partition_mode == "pascal_image_label":
+        # Get the image-wise label:
+        #   - When there are multiple for an image return the most frequent
+        #   - All train_labels then are on the same order of magnitude.
+        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
+    elif partition_mode == "native":
+        pass
+    else:
+        raise NotImplementedError()
+    return train_labels
+
+
 def compute_stochastic_greedy_subsets(
     embeddings,
     submod_function,
@@ -898,30 +917,7 @@ def compute_stochastic_greedy_subsets(
     Return greedy ordering and gains with different submodular functions as the global order.
     """
 
-    # TODO: Create enum
-    # Partition methods for Semantic segmentation datasets
-    if partition_mode == "no_partition":
-        print("DEV EXPERIMENT: NO PARTITIONING!")
-        train_labels = [0] * len(train_labels)
-    elif partition_mode == "pixel_mode":
-        # Lazily approximate image-wise label based on most frequent segmentation mask vlaue.
-        # Reasonable approximation in ImageNet style images consistent with pascal_ctx
-        print("DEV EXPERIMENT: IMAGE-WISE PARTITIONING!")
-        tmp = []
-        for mask in train_labels:
-            values, counts = np.unique(mask, return_counts=True)
-            index = np.argmax(counts)
-            tmp.append(index)
-        train_labels = tmp
-    elif partition_mode == "pascal_image_label":
-        # Get the image-wise label:
-        #   - When there are multiple for an image return the most frequent
-        #   - All train_labels then are on the same order of magnitude.
-        train_labels = [train_dataset.get_imagewise_label(train_dataset.__getitem__(i)[3]) for i in range(len(train_dataset))]
-    elif partition_mode == "native":
-        pass
-    else:
-        raise NotImplementedError()
+    train_labels = partition_dataset(train_labels=train_labels, partition_mode=partition_mode, train_dataset=train_dataset)
 
     budget = int(fraction * embeddings.shape[0])
     # if submod_function not in ["supfl", "gc_pc", "logdet_pc", "disp_min", "disp_sum"]:
@@ -1020,7 +1016,9 @@ def compute_stochastic_greedy_subsets(
             subsets.append(subset)
             total_time += time.time() - st_time
     else:
-        raise NotImplementedError("Epsilon from config not propogated to per cluster stochastic subset generation")
+        # raise NotImplementedError("Epsilon from config not propogated to per cluster stochastic subset generation")
+        print("WARNING PARTITION CLUSTER MILO CONFIGURATION")
+
         clusters = set(train_labels)
         # Label-wise Partition
         cluster_idxs = {}
@@ -1047,6 +1045,8 @@ def compute_stochastic_greedy_subsets(
             subset = []
             cluster_idx = 0
             for cluster in cluster_idxs.keys():
+                if cluster == 46:
+                    print("break")
                 idxs = cluster_idxs[cluster]
                 cluster_embeddings = embeddings[idxs, :]
                 clustered_dist = get_cdist(cluster_embeddings)
@@ -1103,7 +1103,7 @@ def compute_stochastic_greedy_subsets(
                     if per_cls_budget[cluster_idx] == cluster_embeddings.shape[0]:
                         clustergreedyList = obj.maximize(
                             budget=per_cls_budget[cluster_idx] - 1,
-                            optimizer="StochasticGreedy",
+                            optimizer="NaiveGreedy",
                             stopIfZeroGain=False,
                             stopIfNegativeGain=False,
                             epsilon=0.1,
@@ -1132,7 +1132,7 @@ def compute_stochastic_greedy_subsets(
                     if per_cls_budget[cluster_idx] == cluster_embeddings.shape[0]:
                         clustergreedyList = obj.maximize(
                             budget=per_cls_budget[cluster_idx] - 1,
-                            optimizer="LazierThanLazyGreedy",
+                            optimizer="NaiveGreedy",
                             stopIfZeroGain=False,
                             stopIfNegativeGain=False,
                             epsilon=0.1,

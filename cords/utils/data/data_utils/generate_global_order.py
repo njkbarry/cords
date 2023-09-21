@@ -1264,7 +1264,7 @@ def load_dataset(dataset_name, data_dir, seed, return_valid=False, return_test=F
         num_trn = num_fulltrn - num_val
         trainset, valset = random_split(fullset, [num_trn, num_val], generator=torch.Generator().manual_seed(seed))
 
-    elif dataset_name == "cityscape":
+    elif dataset_name == "cityscapes":
         crop_size = (config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
         trainset = eval("datasets." + config.DATASET.DATASET)(
             root=config.DATASET.ROOT,

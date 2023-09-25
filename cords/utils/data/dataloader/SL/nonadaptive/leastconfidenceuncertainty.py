@@ -101,6 +101,7 @@ class LeastConfidenceUncertainty(NonAdaptiveDSSDataLoader):
             inputs.append(feature_extractor(images_batch, return_tensors="pt"))
 
         img_preds = None  # Initialise
+
         # Warning large RAM requirements
         for batch_inputs in tqdm(inputs, total=len(inputs), desc="Extracting logits"):
             tmp_feat_dict = {}

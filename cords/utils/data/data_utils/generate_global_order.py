@@ -965,13 +965,17 @@ def partition_dataset(train_labels, partition_mode: str, train_dataset):
         tmp = []
         for mask in train_labels:
             values, counts = np.unique(mask, return_counts=True)
-            index = np.nanargmin(
-                [train_dataset.get_occurence_class_proportion(c) for c in values]
-            )
-            if values[index] == -1:
-                tmp.append(4)
-            else:
+            try:
+                index = np.nanargmin(
+                    [train_dataset.get_occurence_class_proportion(c) for c in values]
+                )
+                # FIXME: Probably redundant, comment out for now
+                # if values[index] == train_dataset.ignore_label:
+                #     tmp.append(4)  # arbitrary
                 tmp.append(values[index])
+            except ValueError as e:
+                print('Pure ignore image encountered')
+                tmp.append(4)   # arbitrary
         train_labels = tmp
 
     elif partition_mode == "pascal_image_label":

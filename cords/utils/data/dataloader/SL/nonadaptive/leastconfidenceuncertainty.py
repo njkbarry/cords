@@ -37,10 +37,10 @@ class LeastConfidenceUncertainty(NonAdaptiveDSSDataLoader):
         """
         assert "method" in dss_args.keys(), "'measure' is a compulsory argument. Include it as a key in dss_args"
         assert "model" in dss_args.keys(), "'model' is a compulsory argument. Include it as a key in dss_args"
-        # assert "per_class" in dss_args.keys(), "'per_class' is a compulsory argument. Include it as a key in dss_args"
         self.measure = dss_args.method
         self.model = dss_args.model
         self.dataset = train_dataset
+        self.reverse = dss_args.reverse
 
         super(LeastConfidenceUncertainty, self).__init__(train_loader, train_loader, dss_args, logger, *args, **kwargs)
 
@@ -134,12 +134,11 @@ class LeastConfidenceUncertainty(NonAdaptiveDSSDataLoader):
         else:
             raise NotImplementedError(f"'{self.measure}' method doesn't exist")
 
-        # # REVERSE EXPERIMENT
-        # indices = np.flip(indices)
+        if self.reverse:
+            indices = np.flip(indices)
 
         subset_indices = indices[: self.budget]
         subset_weights = np.ones_like(subset_indices)  # All subsets have equal weight
-        # DEV
 
         end = time.time()
         self.logger.info(

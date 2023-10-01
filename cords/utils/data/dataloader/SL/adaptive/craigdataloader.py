@@ -19,9 +19,10 @@ class CRAIGDataLoader(AdaptiveDSSDataLoader):
     logger: class
         Logger for logging the information
     """
+
     def __init__(self, train_loader, val_loader, dss_args, logger, *args, **kwargs):
         """
-         Constructor function
+        Constructor function
         """
         # Arguments assertion check
         assert "model" in dss_args.keys(), "'model' is a compulsory argument. Include it as a key in dss_args"
@@ -34,26 +35,58 @@ class CRAIGDataLoader(AdaptiveDSSDataLoader):
         assert "optimizer" in dss_args.keys(), "'optimizer' is a compulsory argument for CRAIG. Include it as a key in dss_args"
         assert "if_convex" in dss_args.keys(), "'if_convex' is a compulsory argument for CRAIG. Include it as a key in dss_args"
 
-        super(CRAIGDataLoader, self).__init__(train_loader, val_loader, dss_args,
-                                                logger, *args, **kwargs)
-        
-        self.strategy = CRAIGStrategy(train_loader, val_loader, copy.deepcopy(dss_args.model), dss_args.loss, 
-                                     dss_args.device, dss_args.num_classes, dss_args.linear_layer,  
-                                     dss_args.if_convex, dss_args.selection_type, logger, dss_args.optimizer)
-        self.train_model = dss_args.model        
-        self.logger.info('CRAIG dataloader initialized. ')
+        super(CRAIGDataLoader, self).__init__(train_loader, val_loader, dss_args, logger, *args, **kwargs)
+
+        self.strategy = CRAIGStrategy(
+            train_loader,
+            val_loader,
+            copy.deepcopy(dss_args.model),
+            dss_args.loss,
+            dss_args.device,
+            dss_args.num_classes,
+            dss_args.linear_layer,
+            dss_args.if_convex,
+            dss_args.selection_type,
+            logger,
+            dss_args.optimizer,
+        )
+        self.train_model = dss_args.model
+        self.logger.info("CRAIG dataloader initialized. ")
 
     def _resample_subset_indices(self):
         """
         Function that calls the CRAIG subset selection strategy to sample new subset indices and the corresponding subset weights.
         """
-        
+
         start = time.time()
-        self.logger.info('Epoch: {0:d}, requires subset selection. '.format(self.cur_epoch))
+        self.logger.info("Epoch: {0:d}, requires subset selection. ".format(self.cur_epoch))
         cached_state_dict = copy.deepcopy(self.train_model.state_dict())
         clone_dict = copy.deepcopy(self.train_model.state_dict())
         subset_indices, subset_weights = self.strategy.select(self.budget, clone_dict)
         self.train_model.load_state_dict(cached_state_dict)
         end = time.time()
-        self.logger.info('Epoch: {0:d}, subset selection finished, takes {1:.4f}. '.format(self.cur_epoch, (end - start)))
+        self.logger.info("Epoch: {0:d}, subset selection finished, takes {1:.4f}. ".format(self.cur_epoch, (end - start)))
+        return subset_indices, subset_weights
+
+        # Over-riding initial random subset selection
+
+    def _init_subset_loader(self):
+        """
+        Function that initializes the initial subset loader
+        """
+        self.subset_indices, self.subset_weights = self._init_subset_indices()
+        self._refresh_subset_loader()
+
+    def _init_subset_indices(self):
+        """
+        Function that initializes the initial subset indices
+        """
+        start = time.time()
+        self.logger.debug("Epoch: {0:d}, requires subset selection. ".format(self.cur_epoch))
+        cached_state_dict = copy.deepcopy(self.train_model.state_dict())
+        clone_dict = copy.deepcopy(self.train_model.state_dict())
+        subset_indices, subset_weights = self.strategy.select(self.budget, clone_dict)
+        self.train_model.load_state_dict(cached_state_dict)
+        end = time.time()
+        self.logger.info("Epoch: {0:d}, GlobalOrder based subset selection finished, takes {1:.4f}. ".format(self.cur_epoch, (end - start)))
         return subset_indices, subset_weights
